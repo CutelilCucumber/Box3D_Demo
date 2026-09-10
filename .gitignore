@@ -29,3 +29,5 @@ venv/
 
 # Local working note — scratch, not part of the public demo.
 DEMO_SYNC.md
+AGENT-setup.md
+AGENTS.md

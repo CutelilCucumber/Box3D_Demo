@@ -157,15 +157,19 @@ func _process(delta: float) -> void:
 				_slowmo_until_ms = -1
 
 	# Camera shake: decaying trauma, squared so small hits stay subtle.
+	# Decay trauma regardless of mode, but only manipulate the camera in free-fly
+	# so a player-owned camera (mech) keeps its own pitch/yaw.
 	if _trauma > 0.0:
 		_trauma = maxf(_trauma - delta * 1.3, 0.0)
-		var t := _trauma * _trauma
-		_camera.rotation = Vector3(
-			(randf() - 0.5) * 0.07 * t,
-			(randf() - 0.5) * 0.07 * t,
-			(randf() - 0.5) * 0.045 * t)
-	elif _camera.rotation != Vector3.ZERO:
-		_camera.rotation = Vector3.ZERO
+	if _free_fly:
+		if _trauma > 0.0:
+			var t := _trauma * _trauma
+			_camera.rotation = Vector3(
+					(randf() - 0.5) * 0.07 * t,
+					(randf() - 0.5) * 0.07 * t,
+					(randf() - 0.5) * 0.045 * t)
+		elif _camera.rotation != Vector3.ZERO:
+			_camera.rotation = Vector3.ZERO
 
 	# Adaptive quality: when the solver overruns, halve the substeps until the
 	# crunch passes. Rubble settling barely notices; frame time halves.
@@ -210,7 +214,13 @@ func _process(delta: float) -> void:
 		_stats.text += " | fire %d/%d" % [BurnFX.active_count(), _fire.burning_count()]
 	if _glass != null and _glass.report()["total"] > 0:
 		_stats.text += " | glass broken %d" % _glass.report()["total"]
+	_stats.text += _extra_stats()
 	_update_charge_hud()
+
+
+## Hook for derived gyms to append to the stats readout (mech gym: hp).
+func _extra_stats() -> String:
+	return ""
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -258,7 +268,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_T:
 				_toggle_charge_mode()
 			KEY_SPACE:
-				_detonate_all()
+				if _free_fly:
+					_detonate_all()
 			KEY_R:
 				get_tree().reload_current_scene()
 			KEY_B:
@@ -538,7 +549,7 @@ func _shoot(screen_pos: Vector2) -> void:
 	_spawn_ball(origin + dir * 2.0, dir * BALL_SPEED)
 
 
-func _spawn_ball(from: Vector3, velocity: Vector3) -> void:
+func _spawn_ball(from: Vector3, velocity: Vector3, damage := 0.0) -> void:
 	var ball := Box3DBody.new()
 	ball.shape_type = Box3DBody.SPHERE
 	ball.sphere_radius = BALL_RADIUS
@@ -550,6 +561,11 @@ func _spawn_ball(from: Vector3, velocity: Vector3) -> void:
 	_world.add_child(ball)
 	ball.set_linear_velocity(velocity)
 	BoxVis.sphere(ball, BALL_RADIUS, Color(0.16, 0.16, 0.18))
+	# Mech cannon round: on a hit, also deal HP damage to the thing struck
+	# (walls/panels, and later enemies). damage=0 keeps the plain physics toy.
+	if damage > 0.0:
+		ball.contact_monitor = true
+		ball.body_entered.connect(_on_ball_hit.bind(ball, damage))
 
 	# Lifetime rides on the ball itself: freed with it, no dangling timers.
 	var timer := Timer.new()
@@ -558,6 +574,15 @@ func _spawn_ball(from: Vector3, velocity: Vector3) -> void:
 	timer.autostart = true
 	timer.timeout.connect(ball.queue_free)
 	ball.add_child(timer)
+
+
+## A live cannon round (spawned by the mech) pinging a target: apply the
+## weapon's HP damage on first contact; physics impact does the visible work.
+func _on_ball_hit(other, ball: Box3DBody, damage: float) -> void:
+	if not is_instance_valid(ball):
+		return
+	if other != null and other.has_method("take_damage"):
+		other.take_damage(damage, other.global_position)
 
 
 func _barrage() -> void:

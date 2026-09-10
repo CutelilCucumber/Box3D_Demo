@@ -21,6 +21,7 @@ const SHARD_EXTENT := 0.12  # pieces thinner than this stay boxes (hull-safe)
 const MAX_FRAGMENTS := 2500  # global cap: past this, chunks stay whole
 const MAX_BRICKS := 3000  # global cap on breakable chunks
 const SPAWN_GRACE_TICKS := 21  # contacts ignored this long after spawn (see below)
+const DEFAULT_HP := 24.0  # Phase 2 HP attrition: laser/cannon grind through this
 
 # Cube corner quads (index = x*4 + y*2 + z, minus = 0), Godot front winding.
 const SHARD_FACES := [
@@ -40,6 +41,11 @@ var flammable := false
 ## Fracture depth. Hand-placed blocks and panel-spawned chunks start at 1;
 ## pieces spawned by a generation-2 chunk are inert fragments.
 var generation := 1
+## Phase 2 HP attrition for the mech's laser/cannon: hits grind this down;
+## at 0 the block fractures via the same queued path as a hard impact. Only
+## gen-1 bodies (walls, crates, full chunks) take HP damage — finer shards
+## stay impact-only, so rubbing the laser over rubble dies with the queue.
+var hp := DEFAULT_HP
 ## When set, this chunk is an irregular shard: collision hull + visual both
 ## use this mesh; box_size stays as the bounding extents for further splits.
 var shard_mesh: ArrayMesh = null
@@ -115,6 +121,19 @@ func blast_fracture(at: Vector3, speed: float) -> void:
 	_impact_speed = speed
 	_impact_local = to_local(at).clamp(-box_size * 0.5, box_size * 0.5)
 	FractureQueue.enqueue(get_tree(), _fracture)
+
+
+## Phase 2 HP attrition (the mech's weapon calls this): scrape HP off, and
+## when it runs out fracture through the identical queued path as an impact.
+## Gen-2+ chunks are impact-only so pulsing the beam over settled rubble
+## can't grind the whole city down.
+func take_damage(amount: float, at: Vector3) -> void:
+	if _fractured or generation > 1:
+		return
+	hp -= amount
+	if hp > 0.0:
+		return
+	blast_fracture(at, FRACTURE_SPEED)
 
 
 func _on_body_entered(other: Box3DBody) -> void:

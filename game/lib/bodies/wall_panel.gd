@@ -14,6 +14,7 @@ const FractureFX := preload("res://lib/fx/fracture_fx.gd")
 const FRACTURE_SPEED := 7.0  # m/s relative impact speed that cracks a panel
 const MAX_BRICKS := 3000  # global cap: past this, panels stop crumbling
 const SPAWN_GRACE_TICKS := 21  # contacts ignored this long after spawn (depenetration)
+const DEFAULT_HP := 60.0  # Phase 2 HP attrition: laser/cannon grind this down
 
 var panel_color := Color(0.84, 0.76, 0.66)
 ## World-triplanar facade texture: adjacent panels sample it continuously in
@@ -29,6 +30,10 @@ var material := "masonry"
 var flammable := false
 var fire_moisture := 0.05
 var fire_fuel_scale := 1.0
+## Phase 2 HP attrition for the mech's laser/cannon: hits scrape this down;
+## at 0 the panel fractures via the same queued path as an impact. Steel
+## panels refuse HP damage entirely (cut-only, see blast_fracture).
+var hp := DEFAULT_HP
 
 var _fractured := false
 var _impact_speed := FRACTURE_SPEED
@@ -127,6 +132,18 @@ func blast_fracture(at: Vector3, speed: float) -> void:
 	_impact_speed = speed
 	_impact_local = to_local(at).clamp(-box_size * 0.5, box_size * 0.5)
 	FractureQueue.enqueue(get_tree(), _shatter)
+
+
+## Phase 2 HP attrition (the mech's weapon calls this): scrape HP off, and
+## when it runs out fracture through the identical queued path as an impact.
+## Steel members are cut-only -- the laser hums off them.
+func take_damage(amount: float, at: Vector3) -> void:
+	if _fractured or material == "steel":
+		return
+	hp -= amount
+	if hp > 0.0:
+		return
+	blast_fracture(at, fracture_speed)
 
 
 func _on_body_entered(other: Box3DBody) -> void:
