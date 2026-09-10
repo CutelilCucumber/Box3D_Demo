@@ -20,6 +20,7 @@ game/addons/godot_mcp/
 .mcp.json
 
 # Editor & Python environment cruft
+tools/
 .vscode/
 .idea/
 venv/
