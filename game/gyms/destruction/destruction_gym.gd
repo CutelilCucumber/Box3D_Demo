@@ -16,6 +16,7 @@ const BoxVis := preload("res://lib/fx/box_visuals.gd")
 const BreakableBlock := preload("res://lib/bodies/breakable_block.gd")
 const ExplosionFX := preload("res://lib/fx/explosion_fx.gd")
 const DemoCharge := preload("res://lib/bodies/demo_charge.gd")
+const Tornado := preload("res://lib/tornado.gd")
 const FireSystem := preload("res://lib/fire/fire_system.gd")
 const GlassSystem := preload("res://lib/glass/glass_system.gd")
 const BurnFX := preload("res://lib/fire/burn_fx.gd")
@@ -53,11 +54,15 @@ var _wind: Node     # global wind — on by default (fire lean, drift, prop tipp
 var _camera: Camera3D
 var _pivot: Node3D
 var _stats: Label
+var _help_label: Label
 var _yaw := 0.0
 var _pitch := -0.25
 var _distance := 22.0  # legacy; unused by the free-fly camera
 var _orbiting := false
 var _fly_speed := 14.0  # free-fly metres/sec (wheel adjusts, Shift x3)
+## Free-fly spectator camera. True in the base gyms; a player-controlled scene
+## (e.g. the mech) sets this false so WASD/mouse drive the player instead.
+var _free_fly := true
 var _mouse_captured := false
 var _crosshair: Label
 var _rng := RandomNumberGenerator.new()
@@ -71,6 +76,7 @@ var _charge_size := 1
 var _charge_label: Label
 var _ghost: Node3D
 var _placed: Array = []
+var _tornado: Node3D = null
 
 
 func _ready() -> void:
@@ -95,8 +101,10 @@ func _build_structures() -> void:
 
 
 ## Hook for derived gyms to claim extra keys (city gym: re-press 3 resizes).
-func _extra_key(_code: int) -> void:
-	pass
+## Base gym keeps a destruction tornado on V (derby overrides V for the chase cam).
+func _extra_key(code: int) -> void:
+	if code == KEY_V:
+		_toggle_tornado()
 
 
 ## Physical first (layout-independent), logical as fallback (also catches
@@ -115,17 +123,17 @@ func _process(delta: float) -> void:
 	# E/Q rise and dive, Shift sprints.
 	var move := Vector3.ZERO
 	var basis := Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
-	if _key_down(KEY_W):
+	if _free_fly and _key_down(KEY_W):
 		move -= basis.z
-	if _key_down(KEY_S):
+	if _free_fly and _key_down(KEY_S):
 		move += basis.z
-	if _key_down(KEY_D):
+	if _free_fly and _key_down(KEY_D):
 		move += basis.x
-	if _key_down(KEY_A):
+	if _free_fly and _key_down(KEY_A):
 		move -= basis.x
-	if _key_down(KEY_E):
+	if _free_fly and _key_down(KEY_E):
 		move += Vector3.UP
-	if _key_down(KEY_Q):
+	if _free_fly and _key_down(KEY_Q):
 		move -= Vector3.UP
 	if move != Vector3.ZERO:
 		var speed := _fly_speed * (3.0 if _key_down(KEY_SHIFT) else 1.0)
@@ -229,7 +237,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if mb.pressed:
 					_fly_speed = clampf(_fly_speed / 1.15, 2.0, 120.0)
-	elif event is InputEventMouseMotion and _mouse_captured:
+	elif event is InputEventMouseMotion and _mouse_captured and _free_fly:
 		var mm: InputEventMouseMotion = event
 		_yaw -= mm.relative.x * 0.0025
 		_pitch -= mm.relative.y * 0.0025
@@ -492,11 +500,12 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var help := Label.new()
-	help.text = "LMB shoot | RMB blast | B barrage | N nuke | C clear rubble | F ignite | R reset | 1 tower | 2 landmarks | 3 city (re-press: size) | 4 fire | 5 derby\n" \
+	help.text = "LMB shoot | RMB blast | B barrage | N nuke | C clear rubble | F ignite | V tornado | R reset | 1 tower | 2 landmarks | 3 city (re-press: size) | 4 fire | 5 derby\n" \
 			+ "Mouse look | WASD fly | E/Q up/down | Shift fast | wheel speed | Esc free cursor | F11 fullscreen | T charges | SPACE detonate | crane: G/H slew, J/K trolley, PgUp/Dn hoist"
 	help.position = Vector2(12, 8)
 	_style_label(help)
 	layer.add_child(help)
+	_help_label = help
 	_stats = Label.new()
 	_stats.position = Vector2(12, 56)
 	_style_label(_stats)
@@ -578,6 +587,24 @@ func _blast(screen_pos: Vector2, radius := BLAST_RADIUS, impulse := BLAST_IMPULS
 func _clear_rubble() -> void:
 	for frag in get_tree().get_nodes_in_group("fragment"):
 		frag.queue_free()
+
+
+## V: summon a destruction tornado at whatever the cursor points at. Pressing
+## again while one is active dismisses it (the funnel dissolves and whatever
+## it was flinging settles back down).
+func _toggle_tornado() -> void:
+	if _tornado != null and is_instance_valid(_tornado):
+		_tornado.call("_dissolve")
+		_tornado = null
+		return
+	var at := _cursor_point()
+	if at == Vector3.INF:
+		at = _camera.global_position + Vector3(0.0, 0.0, -8.0)
+	at.y = 0.0
+	# Roam a radius scaled to the arena so it sweeps the action, not the void.
+	var wander := clampf(_ground_size() * 0.28, 8.0, 26.0)
+	_tornado = Tornado.spawn(_world, at, wander)
+	_set_mouse_captured(true)
 
 
 func _toggle_charge_mode() -> void:

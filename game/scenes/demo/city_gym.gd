@@ -51,10 +51,11 @@ static var landmark_mode := false
 
 func _ready() -> void:
 	super()
-	_pivot.position.y = 9.0 if landmark_mode else 5.0
-	_distance = 72.0 if landmark_mode else clampf(14.0 * grid_size, 30.0, 60.0)
-	_pitch = -0.35
-	_update_camera()
+	if _pivot != null:  # null when a player-controlled scene owns the camera
+		_pivot.position.y = 9.0 if landmark_mode else 5.0
+		_distance = 72.0 if landmark_mode else clampf(14.0 * grid_size, 30.0, 60.0)
+		_pitch = -0.35
+		_update_camera()
 
 
 ## Buildings reach out to (grid-1)*SPACING/2 plus ~9 m of footprint; debris
