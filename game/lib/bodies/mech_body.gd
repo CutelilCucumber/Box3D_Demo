@@ -20,7 +20,14 @@ extends Node3D
 ## WASD tied to the viewport rather than the body (a tank-style feel without a
 ## turret).
 
+# Leg / turret animation tuning (procedural, on the model's joint pivots).
+const LEG_SWING := 0.55      # rad swing amplitude at full walk speed
+const LEG_RATE := 5.5        # rad of phase per metre travelled
+const TURRET_SPEED := 6.0    # rad/s turret yaw toward the aim direction
+
 const _Self = preload("res://lib/bodies/mech_body.gd")
+const FractureFX := preload("res://lib/fx/fracture_fx.gd")
+const WarRobot := preload("res://lib/fx/models/mechs/war_robot.glb")
 
 const WALK_SPEED := 5.5     # m/s
 const SPRINT_SPEED := 9.0   # m/s
@@ -53,6 +60,10 @@ const LASER_RANGE := 250.0
 const LASER_THICK := 0.07
 const CANNON_DAMAGE := 30.0   # hp on the first body the ball touches
 const MECH_HP := 100.0
+# Phase 3 absorption: the beam MELTS loose debris instead of damaging it — a
+# short sustained beam consumes a piece, feeding growth and restoring HP.
+const MELT_TIME := 0.4        # s of sustained beam to consume one debris piece
+const ABSORB_HEAL := 6.0      # hp restored per piece absorbed
 
 signal died
 
@@ -61,16 +72,26 @@ var jump_speed := JUMP_SPEED
 ## Mech HP: the turret's beam/projectile chip at this; at 0 `died` fires and
 ## the gym reloads the scene (design's accepted placeholder for death).
 var hp := MECH_HP
+## Phase 3 growth counter: loose debris consumed by the laser. Plain integer,
+## no economy naming/spending yet (that is Phase 4).
+var absorbed_count := 0
 
 var _char: Box3DCharacterBody
 var _world: Box3DWorld
 var _camera: Camera3D
 var _torso: Node3D
+var _robot: Node3D
+var _leg_l: Node3D
+var _leg_r: Node3D
+var _turret: Node3D
+var _walk_phase := 0.0
 var _muzzle_r: Node3D   # right shoulder: the laser
 var _muzzle_l: Node3D   # left shoulder: the cannon
 var _laser_beam: MeshInstance3D
 var _flash_mat: StandardMaterial3D
 var _flash_until := -1.0
+var _absorbing: Box3DBody = null   # loose-debris piece the beam is currently melting
+var _absorb_progress := 0.0
 var _vel := Vector3.ZERO
 var _grounded := false
 var _yaw := 0.0
@@ -117,6 +138,7 @@ func _physics_process(delta: float) -> void:
 		_torso.position.y = sin(Time.get_ticks_msec() * 0.004) * 0.015
 	_look(delta)
 	_move(delta)
+	_animate_parts(delta)
 	_push_dynamics(delta)
 	_weapon(delta)
 	_flash_tick()
@@ -139,8 +161,14 @@ func _set_flash(on: bool) -> void:
 	if _torso == null:
 		return
 	for c in _torso.get_children():
-		if c is MeshInstance3D:
-			(c as MeshInstance3D).material_overlay = _flash_mat if on else null
+		_apply_flash(c, on)
+
+
+func _apply_flash(n: Node, on: bool) -> void:
+	if n is MeshInstance3D:
+		(n as MeshInstance3D).material_overlay = _flash_mat if on else null
+	for c in n.get_children():
+		_apply_flash(c, on)
 
 
 func _flash_tick() -> void:
@@ -226,6 +254,29 @@ func _move(delta: float) -> void:
 		_torso.rotation.y = cur + diff * clampf(TURN_SPEED * delta, 0.0, 1.0)
 
 
+## Procedural rig: swing the two legs with a walk cycle (amplitude scaled by
+## how fast we're moving) and pan the turret head toward the aim direction.
+## The pivots are the model's exported joint nodes under the Body root.
+func _animate_parts(delta: float) -> void:
+	if _robot == null:
+		return
+	var speed := Vector2(_vel.x, _vel.z).length()
+	var amount := clampf(speed / WALK_SPEED, 0.0, 1.0)
+	if speed > 0.05:
+		_walk_phase += speed * LEG_RATE * delta
+	# Two legs, half a cycle apart; idle returns them to straight.
+	var swing := LEG_SWING * amount
+	if _leg_l != null:
+		_leg_l.rotation.x = swing * sin(_walk_phase)
+	if _leg_r != null:
+		_leg_r.rotation.x = swing * sin(_walk_phase + PI)
+	# Turret head tracks the camera aim, relative to the body's own facing.
+	if _turret != null:
+		var target := wrapf(_yaw - _torso.rotation.y, -PI, PI)
+		var cur := _turret.rotation.y
+		_turret.rotation.y = cur + wrapf(target - cur, -PI, PI) * clampf(TURRET_SPEED * delta, 0.0, 1.0)
+
+
 ## Shove dynamic props ahead of the walk direction with a capped force — the
 ## mech pushes rubble along rather than wedging against it.
 func _push_dynamics(delta: float) -> void:
@@ -251,15 +302,16 @@ func _push_dynamics(delta: float) -> void:
 
 
 ## Right-shoulder laser: while RMB is held (and the mouse is captured), a
-## sustained beam grinds HP off whatever it touches. Not a single instant
-## shot — damage flows each frame the trigger is down.
+## sustained beam grinds structural targets and MELTS loose debris (Phase 3).
 func _weapon(delta: float) -> void:
 	var firing := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) \
 			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if firing:
 		_laser(delta)
-	elif _laser_beam != null and _laser_beam.visible:
-		_laser_beam.visible = false
+	else:
+		_reset_absorb()
+		if _laser_beam != null and _laser_beam.visible:
+			_laser_beam.visible = false
 
 
 func _laser(delta: float) -> void:
@@ -272,11 +324,53 @@ func _laser(delta: float) -> void:
 	if hit.get("hit", false):
 		to = hit["position"]
 		var c: Box3DBody = hit.get("collider")
-		if c != null and c.has_method("take_damage"):
-			c.take_damage(LASER_DPS * delta, to)
+		if _is_debris(c):
+			_absorb(c, delta)
+		else:
+			_reset_absorb()
+			if c != null and c.has_method("take_damage"):
+				c.take_damage(LASER_DPS * delta, to)
 	else:
 		to = origin + dir * LASER_RANGE
+		_reset_absorb()
 	_show_beam(muzzle_right(), to)
+
+
+## Loose debris (crates, bricks, rubble, turret wreckage) is consumable: a
+## short sustained beam on one piece melts it away, feeding absorbed_count and
+## restoring a little HP. Structural material never enters here.
+func _absorb(target: Box3DBody, delta: float) -> void:
+	if target != _absorbing:
+		_absorbing = target
+		_absorb_progress = 0.0
+	_absorb_progress += delta
+	if _absorb_progress < MELT_TIME:
+		return
+	_absorb_progress = 0.0
+	_absorbing = null
+	absorbed_count += 1
+	_heal(ABSORB_HEAL)
+	if is_instance_valid(target) and target.is_inside_tree():
+		FractureFX.burst(get_parent(), target.global_position, 0.6, Color(0.55, 0.85, 1.0))
+		target.queue_free()
+
+
+## Any loose debris body (breakable blocks + fragments) is absorbable — "all
+## debris is consumable, through the laser."
+func _is_debris(body: Box3DBody) -> bool:
+	if body == null or not is_instance_valid(body):
+		return false
+	return body.is_in_group("block") or body.is_in_group("fragment")
+
+
+func _reset_absorb() -> void:
+	_absorbing = null
+	_absorb_progress = 0.0
+
+
+## Heal restores HP up to the mech's maximum (absorbing is the heal source).
+func _heal(amount: float) -> void:
+	hp = minf(MECH_HP, hp + amount)
 
 
 ## A stretched emissive box from the right muzzle to the hit point. Toggles
@@ -359,6 +453,10 @@ func _build_body() -> void:
 	add_child(_char)
 
 
+## The war-robot model as the mech's visual shell. The model's local origin
+## sits ~0.96 m above its feet, so we sink it by that much to stand on ground.
+const VISUAL_Y_OFFSET := -0.96
+
 ## Boxy capsule-on-legs shell built from primitives: a torso, a head block,
 ## two legs and two arm studs. Readable as a small mech at a glance.
 func _build_visual() -> void:
@@ -370,31 +468,31 @@ func _build_visual() -> void:
 	# above the root).
 	_torso.position = Vector3(0.0, -0.9, 0.0)
 	_char.add_child(_torso)
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color(0.42, 0.46, 0.52)
-	steel.metallic = 0.6
-	steel.roughness = 0.5
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.24, 0.26, 0.3)
-	dark.metallic = 0.4
-	dark.roughness = 0.7
 
-	var torso_mi := _box(0.9, 0.9, 0.6, Vector3(0.0, 0.95, 0.0), steel)
-	_torso.add_child(torso_mi)
-	var head := _box(0.42, 0.4, 0.42, Vector3(0.0, 1.55, 0.0), dark)
-	_torso.add_child(head)
-	_torso.add_child(_box(0.34, 0.12, 0.1, Vector3(0.0, 1.56, 0.24), _glow_material()))
-	for side in [-1.0, 1.0]:
-		_torso.add_child(_box(0.22, 0.7, 0.26, Vector3(side * 0.3, 0.35, 0.0), steel))
-		_torso.add_child(_box(0.18, 0.18, 0.26, Vector3(side * 0.36, 0.85, 0.0), dark))
+	# The downloaded war-robot model, standing on its feet.
+	var robot: Node3D = WarRobot.instantiate()
+	robot.position = Vector3(0.0, VISUAL_Y_OFFSET, 0.0)
+	_torso.add_child(robot)
+	_robot = robot
+	# Grab the joint pivots the model was exported with (Body/Leg_L/Leg_R/Turret).
+	var body := robot.get_child(0) as Node3D
+	if body != null:
+		for c in body.get_children():
+			if c.name == "Leg_L" and c is Node3D:
+				_leg_l = c as Node3D
+			elif c.name == "Leg_R" and c is Node3D:
+				_leg_r = c as Node3D
+			elif c.name == "Turret" and c is Node3D:
+				_turret = c as Node3D
 
-	# Shoulder weapon muzzles: the laser rides the right, the cannon the left.
-	# They sit on the torso so the beam origin tracks the body as it turns.
+	# Shoulder weapon muzzles (the laser rides the right, the cannon the left).
+	# The robot's "head" is its turret, so the muzzles sit on either side of the
+	# turret mount. They are markers on the shell; the robot model ships empty.
 	_muzzle_r = Node3D.new()
-	_muzzle_r.position = Vector3(0.45, 1.15, 0.0)
+	_muzzle_r.position = Vector3(0.45, 1.45, 0.3)
 	_torso.add_child(_muzzle_r)
 	_muzzle_l = Node3D.new()
-	_muzzle_l.position = Vector3(-0.45, 1.15, 0.0)
+	_muzzle_l.position = Vector3(-0.45, 1.45, 0.3)
 	_torso.add_child(_muzzle_l)
 
 	# One shared red emissive material for the damage flash overlay.
@@ -409,22 +507,3 @@ func _build_camera() -> void:
 	_camera.fov = 70.0
 	add_child(_camera)
 	_camera.current = true
-
-
-func _box(w: float, h: float, d: float, at: Vector3, mat: Material) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(w, h, d)
-	mi.mesh = mesh
-	mi.material_override = mat
-	mi.position = at
-	return mi
-
-
-func _glow_material() -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.8, 0.9, 1.0)
-	m.emission_enabled = true
-	m.emission = Color(0.35, 0.6, 1.0)
-	m.emission_energy_multiplier = 1.2
-	return m

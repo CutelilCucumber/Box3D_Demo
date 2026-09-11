@@ -18,6 +18,8 @@ const Turret := preload("res://lib/bodies/turret.gd")
 const CannonBall := preload("res://lib/bodies/cannon_ball.gd")
 
 var _mech: Node3D = null
+var _health_bar: ProgressBar
+var _fill_style: StyleBoxFlat
 
 
 func _ready() -> void:
@@ -25,8 +27,14 @@ func _ready() -> void:
 	super()
 	_mount_mech()
 	_set_mouse_captured(true)
+	_build_health_bar()
 	if _help_label != null:
-		_help_label.text = "WASD/arrows walk | mouse look | Shift sprint | Space jump | M mech mode | LMB cannon | RMB laser | B barrage | N nuke | F ignite | V tornado | R reset | 1-5 scenes"
+		_help_label.text = "WASD/arrows walk | mouse look | Shift sprint | Space jump | M mech mode | LMB cannon | RMB laser (melts debris) | B barrage | N nuke | F ignite | V tornado | R reset | 1-5 scenes"
+
+
+func _process(delta: float) -> void:
+	super(delta)
+	_update_health_bar()
 
 
 ## Build the mech in place of the free-fly pivot, and point the gym's camera at
@@ -57,6 +65,46 @@ func _mount_mech() -> void:
 ## Death placeholder: a clean scene reload (design's accepted stand-in).
 func _on_mech_died() -> void:
 	get_tree().reload_current_scene()
+
+
+## Bottom-left health bar: a rounded ProgressBar whose fill goes green -> red
+## as the mech's HP falls, anchored to the bottom-left of the screen.
+func _build_health_bar() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0, 0, 0, 0.55)
+	bg.set_border_width_all(2)
+	bg.border_color = Color(0.9, 0.9, 0.9, 0.7)
+	bg.set_corner_radius_all(4)
+
+	_fill_style = StyleBoxFlat.new()
+	_fill_style.set_corner_radius_all(3)
+
+	_health_bar = ProgressBar.new()
+	_health_bar.max_value = MechBody.MECH_HP
+	_health_bar.value = MechBody.MECH_HP
+	_health_bar.add_theme_stylebox_override("background", bg)
+	_health_bar.add_theme_stylebox_override("fill", _fill_style)
+	_health_bar.anchor_left = 0.0
+	_health_bar.anchor_top = 1.0
+	_health_bar.anchor_right = 0.0
+	_health_bar.anchor_bottom = 1.0
+	_health_bar.offset_left = 16.0
+	_health_bar.offset_top = -38.0
+	_health_bar.offset_right = 236.0
+	_health_bar.offset_bottom = -16.0
+	layer.add_child(_health_bar)
+	_update_health_bar()
+
+
+func _update_health_bar() -> void:
+	if _health_bar == null or _mech == null or not is_instance_valid(_mech):
+		return
+	_health_bar.value = maxf(_mech.hp, 0.0)
+	var ratio := clampf(_mech.hp / MechBody.MECH_HP, 0.0, 1.0)
+	_fill_style.bg_color = Color(0.3, 0.9, 0.35, 0.95).lerp(Color(0.9, 0.2, 0.2, 0.95), 1.0 - ratio)
 
 
 ## Handle the mech-mode toggle key (M). The base gym routes unhandled keys here.
@@ -135,4 +183,4 @@ func _blast(sp: Vector2, radius := BLAST_RADIUS, impulse := BLAST_IMPULSE) -> vo
 func _extra_stats() -> String:
 	if _mech == null or not is_instance_valid(_mech):
 		return ""
-	return " | hp %.0f" % maxf(_mech.hp, 0.0)
+	return " | hp %.0f | absorbed %d" % [maxf(_mech.hp, 0.0), _mech.absorbed_count]
