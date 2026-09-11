@@ -23,18 +23,22 @@ extends Node3D
 # Leg / turret animation tuning (procedural, on the model's joint pivots).
 const LEG_SWING := 0.55      # rad swing amplitude at full walk speed
 const LEG_RATE := 5.5        # rad of phase per metre travelled
-const TURRET_SPEED := 6.0    # rad/s turret yaw toward the aim direction
+const TURRET_SPEED := 6.0    # rad/s turret yaw/pitch smoothing toward the aim
+const TURRET_PITCH_MIN := -1.0  # rad, downward pitch limit
+const TURRET_PITCH_MAX := 1.6   # rad, upward pitch limit
+const TORSO_PITCH_FACTOR := 1.0  # fraction of the aim pitch the torso leans with
+const TORSO_PITCH_MAX := 0.9     # rad clamp on the torso lean
 
 const _Self = preload("res://lib/bodies/mech_body.gd")
 const FractureFX := preload("res://lib/fx/fracture_fx.gd")
-const WarRobot := preload("res://lib/fx/models/mechs/war_robot.glb")
+const WarRobot := preload("res://war_robot.tscn")
 
-const WALK_SPEED := 5.5     # m/s
+const WALK_SPEED := 4.0     # m/s
 const SPRINT_SPEED := 9.0   # m/s
-const ACCEL := 18.0         # m/s^2 toward the desired walk velocity
-const GRAVITY := 22.0       # m/s^2
+const ACCEL := 30.0         # m/s^2 toward the desired walk velocity
+const GRAVITY := 25.0       # m/s^2
 const JUMP_SPEED := 7.5     # m/s (just for fun / clearing low rubble)
-const TURN_SPEED := 8.0     # rad/s mech yaw toward its heading
+const TURN_SPEED := 10.0     # rad/s mech yaw toward its heading
 
 # Third-person camera rig.
 const CAM_DIST := 6.5       # m behind the mech
@@ -55,11 +59,11 @@ const PUSH_REACH := 0.45    # m beyond the capsule radius
 # grinds HP off anything carrying take_damage. Left-shoulder CANNON: LMB lobs
 # a ball via the gym's existing spawner. Mech HP attrition feeds the death
 # placeholder (scene reload — design's accepted stand-in).
-const LASER_DPS := 35.0       # hp/s while the beam is on a target
-const LASER_RANGE := 250.0
-const LASER_THICK := 0.07
+const LASER_DPS := 10.0       # hp/s while the beam is on a target
+const LASER_RANGE := 50.0
+const LASER_THICK := 0.1
 const CANNON_DAMAGE := 30.0   # hp on the first body the ball touches
-const MECH_HP := 100.0
+const MECH_HP := 100000.0
 # Phase 3 absorption: the beam MELTS loose debris instead of damaging it — a
 # short sustained beam consumes a piece, feeding growth and restoring HP.
 const MELT_TIME := 0.4        # s of sustained beam to consume one debris piece
@@ -84,6 +88,16 @@ var _robot: Node3D
 var _leg_l: Node3D
 var _leg_r: Node3D
 var _turret: Node3D
+var _turret_pivot: Node3D   # centerline pivot the turret rotates around (see _build_visual)
+var _gun_tip: Node3D   # Marker3D under the turret: cannon muzzle
+var _reclaim_tip: Node3D   # Marker3D under the turret: laser/reclaim muzzle
+# The GunTip's forward direction, measured ONCE at rest (turret.rotation ==
+# ZERO) in the turret's own local space, with the vertical component zeroed
+# out. Because this is captured at rest, it never changes as the turret
+# pitches later — that stability is what makes it safe to use for yaw
+# tracking (see _aim_turret). Falls back to Vector3.ZERO when there's no
+# GunTip marker, which _aim_turret treats as "barrel = pivot's own +Z".
+var _gun_fwd_local := Vector3.ZERO
 var _walk_phase := 0.0
 var _muzzle_r: Node3D   # right shoulder: the laser
 var _muzzle_l: Node3D   # left shoulder: the cannon
@@ -255,26 +269,95 @@ func _move(delta: float) -> void:
 
 
 ## Procedural rig: swing the two legs with a walk cycle (amplitude scaled by
-## how fast we're moving) and pan the turret head toward the aim direction.
-## The pivots are the model's exported joint nodes under the Body root.
+## how fast we're moving) and aim the turret head at the aim point.
 func _animate_parts(delta: float) -> void:
 	if _robot == null:
 		return
-	var speed := Vector2(_vel.x, _vel.z).length()
-	var amount := clampf(speed / WALK_SPEED, 0.0, 1.0)
-	if speed > 0.05:
-		_walk_phase += speed * LEG_RATE * delta
-	# Two legs, half a cycle apart; idle returns them to straight.
+	# Aim the turret first so the torso lean it produces is known before the
+	# legs are placed (they are children of the leaning torso and must
+	# counter-rotate to keep the feet planted).
+	_aim_turret(delta)
+	var move_speed := Vector2(_vel.x, _vel.z).length()
+	var amount := clampf(move_speed / WALK_SPEED, 0.0, 1.0)
+	if move_speed > 0.05:
+		_walk_phase += move_speed * LEG_RATE * delta
+	# Two legs, half a cycle apart; idle returns them to straight. The torso
+	# lean is subtracted so the feet stay on the ground while the body pitches.
 	var swing := LEG_SWING * amount
+	var lean := _torso.rotation.x if _torso != null else 0.0
 	if _leg_l != null:
-		_leg_l.rotation.x = swing * sin(_walk_phase)
+		_leg_l.rotation.x = -lean + swing * sin(_walk_phase)
 	if _leg_r != null:
-		_leg_r.rotation.x = swing * sin(_walk_phase + PI)
-	# Turret head tracks the camera aim, relative to the body's own facing.
-	if _turret != null:
-		var target := wrapf(_yaw - _torso.rotation.y, -PI, PI)
-		var cur := _turret.rotation.y
-		_turret.rotation.y = cur + wrapf(target - cur, -PI, PI) * clampf(TURRET_SPEED * delta, 0.0, 1.0)
+		_leg_r.rotation.x = -lean + swing * sin(_walk_phase + PI)
+
+
+## Smoothly point the turret's barrel at the world-space aim point, on both
+## yaw and pitch, with the two axes fully decoupled.
+##
+## Two bugs used to live here:
+##  1. Pitch was inverted. A world "look up" angle was written straight into
+##     rotation.x, but a positive local-X rotation tips this rig's forward
+##     vector DOWN, not up — so the turret nodded the opposite way from the
+##     aim point. Fixed by negating the world pitch before applying it. (If
+##     your turret is still inverted after this, this is the one line to
+##     flip back — rig axis conventions vary by how the model was exported.)
+##  2. Yaw and pitch were coupled. The old code re-read the GunTip marker's
+##     LIVE global position every frame to estimate "which way the barrel
+##     currently faces," then steered yaw toward that. But the marker's
+##     position already includes the turret's current pitch — so pitching
+##     shifted the marker's horizontal direction even though the turret
+##     hadn't turned, and the yaw controller "corrected" for that phantom
+##     turn. Fixed by using a fixed calibration angle (_gun_fwd_local,
+##     captured once at rest) instead of re-measuring the marker live.
+func _aim_turret(delta: float) -> void:
+	if _turret_pivot == null:
+		return
+	var parent := _turret_pivot.get_parent() as Node3D
+	if parent == null:
+		return
+
+	var step := clampf(TURRET_SPEED * delta, 0.0, 1.0)
+
+	# Where the barrel should point, in WORLD space — measured from the
+	# PIVOT's position, since that's the actual point rotation happens
+	# around now, not the (deliberately off-center) turret mesh riding on it.
+	var to_target: Vector3 = aim_point() - _turret_pivot.global_position
+	var world_yaw := atan2(to_target.x, to_target.z)
+	var world_pitch := atan2(to_target.y, Vector2(to_target.x, to_target.z).length())
+
+	# rotation.y / rotation.x are local to the pivot's PARENT, not to the
+	# world, so convert the world aim into that frame. The parent (the
+	# model's body node) only ever yaws — it never pitches or rolls on its
+	# own — so reading its yaw straight off the global basis is safe and
+	# unambiguous, unlike trying to decompose the PIVOT's own basis (which
+	# also carries its live pitch and would give an ambiguous Euler
+	# decomposition).
+	var parent_yaw: float = parent.global_transform.basis.get_euler().y
+	var target_yaw := wrapf(world_yaw - parent_yaw, -PI, PI)
+
+	# Fix #2: fold in the barrel's fixed calibration offset instead of
+	# re-measuring the marker live. When there's no GunTip marker,
+	# _gun_fwd_local is ZERO and atan2(0, 0) is 0, so this naturally reduces
+	# to "the pivot's own +Z axis is the barrel" — no separate branch needed.
+	target_yaw -= atan2(_gun_fwd_local.x, _gun_fwd_local.z)
+
+	# Fix #1: flip world "look up" into this rig's local pitch convention. With
+	# the torso-lean split below, the barrel's total world pitch is the torso
+	# lean plus the pivot's own pitch, so the pivot only takes the remainder
+	# (factor 1.0 = the whole body leans and the turret stays level on it).
+	var target_pitch := -world_pitch
+
+	# The torso leans up/down with the turret so the mech reads as aiming with
+	# its whole body. Kept on the same smoothing step as the pivot so they move
+	# together. Clamped so the body never over-leans.
+	if _torso != null:
+		var torso_target := -world_pitch * TORSO_PITCH_FACTOR
+		_torso.rotation.x += wrapf(torso_target - _torso.rotation.x, -PI, PI) * step
+		_torso.rotation.x = clampf(_torso.rotation.x, -TORSO_PITCH_MAX, TORSO_PITCH_MAX)
+
+	_turret_pivot.rotation.y += wrapf(target_yaw - _turret_pivot.rotation.y, -PI, PI) * step
+	_turret_pivot.rotation.x += wrapf(target_pitch * (1.0 - TORSO_PITCH_FACTOR) - _turret_pivot.rotation.x, -PI, PI) * step
+	_turret_pivot.rotation.x = clampf(_turret_pivot.rotation.x, TURRET_PITCH_MIN, TURRET_PITCH_MAX)
 
 
 ## Shove dynamic props ahead of the walk direction with a capped force — the
@@ -317,8 +400,8 @@ func _weapon(delta: float) -> void:
 func _laser(delta: float) -> void:
 	if _world == null:
 		return
-	var dir := aim_direction()
-	var origin := _camera.global_position
+	var dir := laser_dir()
+	var origin := reclaim_tip()
 	var hit: Dictionary = _world.raycast(origin, origin + dir * LASER_RANGE)
 	var to: Vector3
 	if hit.get("hit", false):
@@ -333,7 +416,7 @@ func _laser(delta: float) -> void:
 	else:
 		to = origin + dir * LASER_RANGE
 		_reset_absorb()
-	_show_beam(muzzle_right(), to)
+	_show_beam(reclaim_tip(), to)
 
 
 ## Loose debris (crates, bricks, rubble, turret wreckage) is consumable: a
@@ -432,6 +515,45 @@ func muzzle_left() -> Vector3:
 	return _char.global_position
 
 
+## World position of the cannon's muzzle marker (GunTip), falling back to the
+## left shoulder if the model has no marker.
+func gun_tip() -> Vector3:
+	if _gun_tip != null and is_instance_valid(_gun_tip):
+		return _gun_tip.global_position
+	return muzzle_left()
+
+
+## World position of the laser's muzzle marker (ReclaimTip), falling back to
+## the right shoulder if the model has no marker.
+func reclaim_tip() -> Vector3:
+	if _reclaim_tip != null and is_instance_valid(_reclaim_tip):
+		return _reclaim_tip.global_position
+	return muzzle_right()
+
+
+## The 3D direction the turret points: the GunTip's forward direction
+## (captured once, at rest, as _gun_fwd_local) transformed by the turret's
+## LIVE rotation — so it tracks the head's current yaw AND pitch correctly.
+## BOTH weapons fire along this; the tip markers only choose WHERE they emit
+## from. Falls back to the crosshair aim when there's no turret at all.
+func turret_aim_dir() -> Vector3:
+	if _gun_fwd_local != Vector3.ZERO and _turret != null:
+		var d: Vector3 = _turret.global_transform.basis * _gun_fwd_local
+		if d.length() > 0.01:
+			return d.normalized()
+	return aim_direction()
+
+
+## The 3D direction the turret's cannon fires: the turret's aim.
+func cannon_dir() -> Vector3:
+	return turret_aim_dir()
+
+
+## The 3D direction the turret's laser/reclaim beam fires: the turret's aim.
+func laser_dir() -> Vector3:
+	return turret_aim_dir()
+
+
 ## The character collation body — the thing enemies probe/contact against.
 func char_body() -> Box3DCharacterBody:
 	return _char
@@ -485,6 +607,58 @@ func _build_visual() -> void:
 			elif c.name == "Turret" and c is Node3D:
 				_turret = c as Node3D
 
+	# The exported "Body" node itself carries a baked rotation (measured at
+	# 39.8° on Y in this model) — an export quirk, not worth re-exporting
+	# over. That means body-LOCAL X/Z axes aren't aligned with the mech's
+	# actual left/right and forward/back, so guessing a body-local pivot
+	# offset (as an earlier version of this fix did) lands in the wrong spot
+	# once that rotation is factored in.
+	#
+	# Fix: solve for the pivot's position in WORLD space instead, where we
+	# know exactly where the centerline is — directly above _torso, since
+	# _torso and everything built above it (_char, the follow camera rig)
+	# are deliberately constructed with zero X/Z offset. Then convert that
+	# world point into body's local frame using body's REAL transform. This
+	# cancels out whatever position or rotation quirks "body" carries
+	# without this code ever needing to know their values.
+	if _turret != null and body != null:
+		var pivot_world_pos := Vector3(
+				_torso.global_position.x, _turret.global_position.y, _torso.global_position.z)
+		var pivot_local_pos: Vector3 = body.global_transform.affine_inverse() * pivot_world_pos
+
+		_turret_pivot = Node3D.new()
+		_turret_pivot.position = pivot_local_pos
+		body.add_child(_turret_pivot)
+
+		var turret_local_pos: Vector3 = _turret.position
+		body.remove_child(_turret)
+		_turret_pivot.add_child(_turret)
+		# The pivot starts unrotated, so re-expressing the turret's position
+		# relative to it is a plain subtraction — no orientation to account
+		# for yet. This keeps the turret's world position identical to
+		# before the reparenting; only its rotation CENTER has moved.
+		_turret.position = turret_local_pos - pivot_local_pos
+
+	# The GunTip/ReclaimTip markers (Marker3D under the turret) define where the
+	# cannon and laser emit from; the code reads them to place shots and beams.
+	if _turret != null:
+		_gun_tip = _find_descendant(_turret, "GunTip") as Node3D
+		_reclaim_tip = _find_descendant(_turret, "ReclaimTip") as Node3D
+	# Capture the GunTip's horizontal direction in the turret's own frame, AT
+	# REST (both the pivot's and the turret's own rotation are still zero
+	# here). This calibration is unaffected by the pivot wrapper above — it's
+	# still just "which way the barrel points relative to the turret mesh's
+	# own local frame" — and _aim_turret uses it the same way as before, just
+	# applied to the pivot's rotation instead of the turret's directly. It's
+	# also what _aim_turret and turret_aim_dir() use instead of re-measuring
+	# the marker's live position later, which is what used to couple yaw to
+	# pitch (see the comment on _aim_turret).
+	if _gun_tip != null and _turret != null:
+		var lp := _turret.global_transform.affine_inverse() * _gun_tip.global_position
+		lp.y = 0.0
+		if lp.length() > 0.01:
+			_gun_fwd_local = lp.normalized()
+
 	# Shoulder weapon muzzles (the laser rides the right, the cannon the left).
 	# The robot's "head" is its turret, so the muzzles sit on either side of the
 	# turret mount. They are markers on the shell; the robot model ships empty.
@@ -500,6 +674,18 @@ func _build_visual() -> void:
 	_flash_mat.albedo_color = Color(1.0, 0.25, 0.2)
 	_flash_mat.emission_enabled = true
 	_flash_mat.emission = Color(1.0, 0.2, 0.15)
+
+
+## Depth-first search for a descendant node by name (used to find the turret's
+## GunTip marker wherever it sits in the model's hierarchy).
+func _find_descendant(root: Node, name: String) -> Node:
+	if root.name == name:
+		return root
+	for c in root.get_children():
+		var found := _find_descendant(c, name)
+		if found != null:
+			return found
+	return null
 
 
 func _build_camera() -> void:

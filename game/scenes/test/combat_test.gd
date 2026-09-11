@@ -24,6 +24,7 @@ var _cball
 var _cball_start := Vector3.ZERO
 var _cball_pos := Vector3.ZERO
 var _cpanel_hp0 := 0.0
+var _hp0 := 0.0
 var _fire_t := 0.0
 var _t := 0.0
 var _step := 0
@@ -37,6 +38,7 @@ func _ready() -> void:
 	_panel.position = Vector3(0.0, 1.5, -6.0)
 	_world.add_child(_panel)
 	_mech = MechBody.spawn(_world, Vector3(0.0, 0.05, 2.0))
+	_hp0 = _mech.hp
 	# Far outside the turret's SIGHT_RANGE so it sleeps while we drive its
 	# damage by hand (and never shoots the mech during the panel phase).
 	_turret = Turret.spawn(_world, Vector3(100.0, 0.05, 100.0))
@@ -108,7 +110,7 @@ func _process(delta: float) -> void:
 				_check(hurt, "cannon round deals damage on contact")
 				_mech.take_damage(25.0, _mech.hit_center())
 				print("[combat] mech hp after 1 cannon hit = %.0f" % _mech.hp)
-				_check(absf(_mech.hp - 75.0) < 0.01,
+				_check(absf(_mech.hp - (_hp0 - 25.0)) < 0.01,
 						"mech loses hp from a single hit")
 				_step = 5
 		5:
@@ -118,7 +120,7 @@ func _process(delta: float) -> void:
 		6:
 			if _t >= 6.5:  # several seconds of a live fight (beam + bolts)
 				print("[combat] mech hp after turret fight = %.0f" % _mech.hp)
-				_check(_mech.hp < 75.0,
+				_check(_mech.hp < _hp0 - 25.0,
 						"a live turret's beam/bolts wear the mech down")
 				print("[combat] RESULT -> %s" % ("PASS" if _ok else "FAIL"))
 				# The exit code IS the verdict — CI must be able to gate on it.

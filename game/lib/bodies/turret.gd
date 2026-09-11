@@ -1,7 +1,8 @@
 extends Box3DBody
 
 ## A stationary enemy turret (Phase 2): a fixed hull on a street corner with
-## a rotating barrel. Two attacks, both gated on line-of-sight to the player
+## a rotating barrel (the imported A-1 turret model — Base stays put, Barrel
+## aims). Two attacks, both gated on line-of-sight to the player
 ## mech: a continuous beam (DPS at close range ≤ BEAM_RANGE) plus a slow,
 ## dodgeable bolt every BOLT_PERIOD seconds (within SIGHT_RANGE). Anything the
 ## player can hit carries duck-typed take_damage — the same hook blast and the
@@ -13,9 +14,10 @@ const _Self = preload("res://lib/bodies/turret.gd")
 const BoxVis := preload("res://lib/fx/box_visuals.gd")
 const BreakableBlock := preload("res://lib/bodies/breakable_block.gd")
 const FractureFX := preload("res://lib/fx/fracture_fx.gd")
+const TurretModel := preload("res://lib/fx/models/turrets/a1_turret.glb")
 
 const HP := 40.0               # ~1.2 s of full laser or 2 cannon hits
-const HULL_SIZE := Vector3(1.0, 1.8, 1.0)
+const HULL_SIZE := Vector3(1.7, 1.8, 1.7)  # matches the A-1 model's footprint
 const HULL_COLOR := Color(0.55, 0.2, 0.18)
 
 const BEAM_DPS := 12.0         # hp/s while the beam touches the mech
@@ -29,18 +31,25 @@ const BOLT_LIFE_TICKS := 360   # ~6 s at 60 physics ticks/s
 
 var _hp := HP
 var _mech: Node3D              # cached "player" group member
-var _barrel: Node3D            # visual pivot aiming at the mech
+var _barrel: Node3D            # A-1 model's Barrel node: the aiming pivot
+var _muzzle: Node3D            # Marker3D at the barrel tip: beam/bolt origin
+var _base_mesh: MeshInstance3D
+var _barrel_mesh: MeshInstance3D
+var _model_meshes: Array = []
+var _flash_mat: StandardMaterial3D
 var _beam: MeshInstance3D
 var _bolts: Array = []         # { b: Box3DBody, expire: int }
 var _bolt_cooldown := 0.0
 var _flash_until := -1.0
-var _base_color := HULL_COLOR
 var _dead := false
 
 
 static func spawn(world: Box3DWorld, at: Vector3) -> Box3DBody:
 	var t := _Self.new()
-	t.position = at  # before add_child: Box3D snapshots the transform on ready
+	# The body's position is the COLLIDER's center; the visual model stands on
+	# the ground, so raise the box so it spans the model (the model root is
+	# offset back down by the same amount in _ready to compensate).
+	t.position = at + Vector3(0.0, HULL_SIZE.y * 0.5, 0.0)
 	world.add_child(t)
 	return t
 
@@ -50,23 +59,28 @@ func _ready() -> void:
 	shape_type = Box3DBody.BOX
 	box_size = HULL_SIZE
 	add_to_group("enemy")
-	BoxVis.box(self, HULL_SIZE, HULL_COLOR, true)
-	# A barrel pivot on top of the hull: it aims at the mech and carries the
-	# muzzle the beam/bolts originate from.
-	_barrel = Node3D.new()
-	_barrel.position = Vector3(0.0, HULL_SIZE.y * 0.5 + 0.06, 0.0)
-	add_child(_barrel)
-	var barrel_mi := MeshInstance3D.new()
-	var barrel_mesh := BoxMesh.new()
-	barrel_mesh.size = Vector3(0.16, 0.16, 0.7)
-	barrel_mi.mesh = barrel_mesh
-	var gun := StandardMaterial3D.new()
-	gun.albedo_color = Color(0.22, 0.2, 0.2)
-	gun.metallic = 0.5
-	gun.roughness = 0.6
-	barrel_mi.material_override = gun
-	barrel_mi.position = Vector3(0.0, 0.0, 0.35)
-	_barrel.add_child(barrel_mi)
+	# The imported A-1 turret model. Its Base stands on the ground; its Barrel
+	# node is authored with its rotation pivot at the barrel's mount, pointing
+	# -Z (Godot forward), so aiming it with look_at works directly. The model
+	# root is dropped by half the collider height because the collider is
+	# centered on the body while the model rises from the ground.
+	var model := TurretModel.instantiate()
+	model.position = Vector3(0.0, -HULL_SIZE.y * 0.5, 0.0)
+	add_child(model)
+	_base_mesh = model.get_node("Base") as MeshInstance3D
+	_barrel_mesh = model.get_node("Barrel") as MeshInstance3D
+	_barrel = _barrel_mesh
+	_model_meshes = [_base_mesh, _barrel_mesh]
+	# Muzzle marker at the barrel's tip; the beam and bolts emit from here.
+	_muzzle = Marker3D.new()
+	_muzzle.position = Vector3(0.0, 0.0, -0.8)
+	_barrel.add_child(_muzzle)
+	# Shared red emissive flash for the damage-hit overlay.
+	_flash_mat = StandardMaterial3D.new()
+	_flash_mat.albedo_color = Color(1.0, 0.3, 0.25)
+	_flash_mat.emission_enabled = true
+	_flash_mat.emission = Color(1.0, 0.25, 0.2)
+	_flash_mat.emission_energy_multiplier = 4.0
 
 
 ## The mech ships shots duck-typed on take_damage, same as panels do.
@@ -75,7 +89,7 @@ func take_damage(amount: float, _at: Vector3) -> void:
 		return
 	_hp -= amount
 	_flash_until = Time.get_ticks_msec() + 100.0
-	BoxVis.recolor(self, HULL_COLOR.lerp(Color(1.0, 0.4, 0.3), 0.8))
+	_set_flash(true)
 	if _hp <= 0.0:
 		_die()
 
@@ -91,7 +105,7 @@ func _physics_process(delta: float) -> void:
 		return
 	var mech_pos: Vector3 = mech.hit_center()
 
-	var dist := _barrel.global_position.distance_to(mech_pos)
+	var dist := _muzzle.global_position.distance_to(mech_pos)
 	if dist > SIGHT_RANGE or not _los_clear(mech_pos):
 		_set_beam_visible(false)
 		return
@@ -113,7 +127,14 @@ func _flash_tick() -> void:
 		return
 	if Time.get_ticks_msec() >= _flash_until:
 		_flash_until = -1.0
-		BoxVis.recolor(self, HULL_COLOR)
+		_set_flash(false)
+
+
+## Flash the model meshes red on a damage hit (material override swap).
+func _set_flash(on: bool) -> void:
+	for mi in _model_meshes:
+		if is_instance_valid(mi):
+			mi.material_override = _flash_mat if on else null
 
 
 func _find_mech() -> Node3D:
@@ -131,7 +152,7 @@ func _find_mech() -> Node3D:
 ## never hit it directly — LOS is instead "nothing solid blocks the shot":
 ## a hit that lands well before the target means geometry is in the way.
 func _los_clear(target: Vector3) -> bool:
-	var from: Vector3 = _barrel.global_position
+	var from: Vector3 = _muzzle.global_position
 	var dir: Vector3 = target - from
 	var dist := dir.length()
 	if dist < 0.01:
@@ -163,7 +184,7 @@ func _set_beam_visible(on: bool, target := Vector3.ZERO) -> void:
 	_beam.visible = on
 	if not on:
 		return
-	var from: Vector3 = _barrel.global_position
+	var from: Vector3 = _muzzle.global_position
 	var length := maxf(from.distance_to(target), 0.01)
 	_beam.global_position = (from + target) * 0.5
 	_beam.look_at(target, Vector3.UP)
@@ -172,7 +193,7 @@ func _set_beam_visible(on: bool, target := Vector3.ZERO) -> void:
 
 ## Lob a slow bolt at the mech's CURRENT position: standing still means a hit.
 func _fire_bolt(target: Vector3, _delta: float) -> void:
-	var from: Vector3 = _barrel.global_position
+	var from: Vector3 = _muzzle.global_position
 	var dir := (target - from).normalized()
 	var bolt := Box3DBody.new()
 	bolt.shape_type = Box3DBody.SPHERE

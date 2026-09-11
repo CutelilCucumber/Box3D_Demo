@@ -14,9 +14,17 @@ config/name="Physics"
 run/main_scene="res://scenes/demo/mech_gym.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
+[autoload]
+
+_fennara_game_capture="*res://addons/fennara/runtime/game_capture_helper.gd"
+
 [display]
 
 window/size/mode=3.0
+
+[filesystem]
+
+import/blender/enabled=false
 
 [shader_globals]
 

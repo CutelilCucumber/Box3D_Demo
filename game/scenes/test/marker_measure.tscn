@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/test/marker_measure.gd" id="1_mm"]
+
+[node name="MarkerMeasure" type="Node3D"]
+script = ExtResource("1_mm")

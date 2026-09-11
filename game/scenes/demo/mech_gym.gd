@@ -160,14 +160,14 @@ func _shoot(sp: Vector2) -> void:
 	if _free_fly or _mech == null:
 		super._shoot(sp)
 		return
-	var from: Vector3 = _mech.muzzle_left()
-	var to_target: Vector3 = _mech.aim_point() - from
-	if to_target.y < 0.0:
-		to_target.y = 0.0  # never shoot the ground under the follow cam
-	if to_target.length() < 0.01:
-		to_target = Vector3(0.0, 0.0, -1.0)
-	var dir := to_target.normalized()
-	CannonBall.spawn(_world, from + dir * 1.0, dir * BALL_SPEED,
+	# Fire along the turret's barrel direction (from the pivot to the GunTip
+	# marker), not the crosshair ray — the round goes exactly where the head
+	# points.
+	var from: Vector3 = _mech.gun_tip()
+	var dir: Vector3 = _mech.cannon_dir()
+	if dir.length() < 0.01:
+		dir = Vector3(0.0, 0.0, -1.0)
+	CannonBall.spawn(_world, from, dir * BALL_SPEED,
 			MechBody.CANNON_DAMAGE, Color(0.16, 0.16, 0.18))
 
 
