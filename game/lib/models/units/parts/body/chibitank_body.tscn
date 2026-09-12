@@ -1,7 +1,6 @@
 [gd_scene format=4 uid="uid://bl3ep5bjjdl33"]
 
 [ext_resource type="Script" uid="uid://46bx5ofy2lre" path="res://lib/models/units/parts/body/chibitank_body.gd" id="1_part"]
-[ext_resource type="PackedScene" uid="uid://ys2sfubat6i7" path="res://lib/models/units/parts/treads/treadgears.tscn" id="2_v8lga"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_havmi"]
 resource_name = "material1"
@@ -1621,9 +1620,6 @@ shadow_mesh = SubResource("ArrayMesh_nc488")
 transform = Transform3D(0.111, 0, 0, 0, 0.111, 0, 0, 0, 0.111, 0, 0, 0)
 script = ExtResource("1_part")
 
-[node name="treads" parent="." unique_id=1429256245 instance=ExtResource("2_v8lga")]
-transform = Transform3D(0.0022398387, 0, 3.5288308, 0, 4.1402993, 0, -4.140299, 0, 0.001909018, 4.9467673, -0.05398892, -2.3353837)
-
 [node name="front_hatch_handle" type="MeshInstance3D" parent="." unique_id=1552064030]
 transform = Transform3D(3.5288336, 0.0022472222, -0.00048311517, 1.7845931e-06, 3.486577, 1.0625514, 0.0019100081, -4.155143, 0.891586, -0.34954792, 7.811898, 3.3376527)
 mesh = SubResource("ArrayMesh_0hrlj")
@@ -1782,3 +1778,9 @@ mesh = SubResource("ArrayMesh_n8lm1")
 
 [node name="HeadMount" type="Marker3D" parent="." unique_id=2026469189]
 transform = Transform3D(0.0022398387, 0, 3.5288308, 0, 4.1402993, 0, -4.140299, 0, 0.001909018, -0.34522766, 12.610457, -4.647909)
+
+[node name="LegMountL" type="Marker3D" parent="." unique_id=487452489]
+transform = Transform3D(0.9999997, 0, 0, 0, 0.9999997, 0, 0, 0, 0.9999997, -4.9535613, 4.5877113, 0.44852835)
+
+[node name="LegMountR" type="Marker3D" parent="." unique_id=2101657414]
+transform = Transform3D(0.9999997, 0, 0, 0, 0.9999997, 0, 0, 0, 0.9999997, 4.042891, 4.5877113, 0.44852832)

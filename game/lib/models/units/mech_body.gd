@@ -74,6 +74,8 @@ const LASER_RANGE := 50.0
 const LASER_THICK := 0.1
 const CANNON_DAMAGE := 10.0   # hp on the first body the plasma touches
 const CANNON_SPEED := 32.0    # m/s tank cannonball travel
+const CANNON_BLAST_RADIUS := 3.0  # m, visual + physics blast radius
+const CANNON_BLAST_IMPULSE := 4.0 # blast impulse strength
 const MECH_HP := 100.0
 # Phase 3 absorption: the beam MELTS loose debris instead of damaging it — a
 # short sustained beam consumes a piece, feeding growth and restoring HP.

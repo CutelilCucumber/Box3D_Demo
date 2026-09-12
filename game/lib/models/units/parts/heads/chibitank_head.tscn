@@ -681,7 +681,7 @@ transform = Transform3D(2.77, 0, 0, 0, 2.77, 0, 0, 0, 2.77, 0, 0, 0)
 script = ExtResource("1_part")
 
 [node name="turrent_container" type="Node3D" parent="." unique_id=727807800]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55, 0, 0)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0.55, 0)
 
 [node name="barrelA" type="MeshInstance3D" parent="turrent_container" unique_id=165550913]
 transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, -1.9308347, 1.03043, -0.013887444)

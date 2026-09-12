@@ -2,33 +2,42 @@ extends Node3D
 
 ## The mech's cannon round: a kinematic shell flown by hand, NOT a Box3D body.
 ## The fork's solver freezes dynamic spheres spawned near the player character
-## controller (the mover's collision queries bleed velocity off them), so the
+## (the mover's collision queries bleed velocity off them), so the
 ## cannon round sidesteps the solver entirely: it advances a straight arc each
 ## physics tick and sweeps an overlap sphere for anything carrying
 ## take_damage. First contact — a wall, a turret, a crate — deals the round's
-## damage and frees it.
+## damage and frees it. On impact or timeout it explodes.
 ##
-##   CannonBall.spawn(world, from, velocity, damage, color)
+##   CannonBall.spawn(world, from, velocity, damage, color, blast_radius, blast_impulse)
 
 const _Self = preload("res://lib/bodies/cannon_ball.gd")
+const ExplosionFX := preload("res://lib/fx/explosion_fx.gd")
 
 const RADIUS := 0.4          # matches the old physical ball
 const GRAVITY := 9.8         # m/s^2: a gentle lob, still flat enough to read
 const LIFE := 6.0            # seconds before it fizzles out
 const SWEEP := 0.9           # overlap radius: ball + half a tick of travel
+const DEFAULT_BLAST_RADIUS := 3.0
+const DEFAULT_BLAST_IMPULSE := 4.0
 
 var _world: Box3DWorld
 var _vel := Vector3.ZERO
 var _damage := 0.0
 var _age := 0.0
+var _blast_radius := DEFAULT_BLAST_RADIUS
+var _blast_impulse := DEFAULT_BLAST_IMPULSE
 
 
 static func spawn(world: Box3DWorld, from: Vector3, vel: Vector3,
-		damage: float, color: Color) -> Node3D:
+		damage: float, color: Color,
+		blast_radius := DEFAULT_BLAST_RADIUS,
+		blast_impulse := DEFAULT_BLAST_IMPULSE) -> Node3D:
 	var b := _Self.new()
 	b._world = world
 	b._vel = vel
 	b._damage = damage
+	b._blast_radius = blast_radius
+	b._blast_impulse = blast_impulse
 	b.position = from
 	world.add_child(b)
 	var mi := MeshInstance3D.new()
@@ -62,6 +71,7 @@ func _physics_process(delta: float) -> void:
 		if _hit(prev.lerp(global_position, t)):
 			return
 	if _age >= LIFE:
+		_explode()
 		queue_free()
 
 
@@ -75,6 +85,14 @@ func _hit(at: Vector3) -> bool:
 			continue
 		if b.has_method("take_damage") and _damage > 0.0:
 			b.take_damage(_damage, at)
+		_explode(at)
 		queue_free()
 		return true
 	return false
+
+
+func _explode(at: Vector3 = Vector3.ZERO) -> void:
+	if _world == null:
+		return
+	var pos := at if at != Vector3.ZERO else global_position
+	ExplosionFX.blast(_world, pos, _blast_radius, _blast_impulse)

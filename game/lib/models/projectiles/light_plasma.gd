@@ -12,6 +12,7 @@ extends Node3D
 
 const _Self = preload("res://lib/models/projectiles/light_plasma.gd")
 const PlasmaScene = preload("res://lib/models/projectiles/light_plasma.tscn")
+const ScorchFX := preload("res://lib/fx/scorch_fx.gd")
 
 const LIFE := 6.0        # seconds before it fizzles out
 const SWEEP := 0.15      # overlap radius: matches the bolt's visual size
@@ -40,7 +41,32 @@ static func spawn(world: Box3DWorld, from: Vector3, vel: Vector3,
 	b.position = from
 	world.add_child(b)
 	b.add_child(PlasmaScene.instantiate())
+	b._orient()
 	return b
+
+
+## Lay the bolt along its flight path. The capsule in light_plasma.tscn is
+## authored with its long axis on +Z, so aligning the basis with the velocity
+## makes the bolt read as a tracer pointing where it travels instead of a
+## capsule frozen at whatever orientation it spawned with.
+##
+## Called once, at spawn: the bolt is a straight-line projectile with no
+## gravity or homing, so `_vel` never changes after construction and neither
+## does the orientation -- re-aiming it every tick would be wasted work.
+##
+## Basis.looking_at rather than Node3D.look_at because it is pure math: it has
+## no SceneTree requirement and, unlike look_at, it does not error when the
+## shot is near vertical (direction parallel to the up vector) -- turret bolts
+## lobbed steeply up or down at the mech hit that case. The explicit up
+## fallback also keeps the bolt's roll deterministic there.
+func _orient() -> void:
+	if _vel.length_squared() < 1e-8:
+		return
+	var dir := _vel.normalized()
+	var up := Vector3.UP
+	if absf(dir.dot(up)) > 0.999:
+		up = Vector3.RIGHT
+	global_basis = Basis.looking_at(dir, up)
 
 
 func _ready() -> void:
@@ -80,12 +106,16 @@ func _hit_player() -> bool:
 	if global_position.distance_to(cb.global_position) > SWEEP + 0.5:
 		return false
 	_mech.take_damage(_damage, cb.global_position)
+	# Scorch on the mech's approximate surface facing the bolt.
+	var hit_normal: Vector3 = -_vel.normalized()
+	ScorchFX.leave_mark(_world, global_position, hit_normal, null, 0.4, 5.0)
 	queue_free()
 	return true
 
 
 ## Check one sample point for contact. Frees the bolt and deals damage on the
 ## first thing carrying take_damage; plain scenery also stops it.
+## Leaves a scorch mark at the impact point, parented to the hit body.
 func _hit(at: Vector3) -> bool:
 	if _world == null:
 		return false
@@ -94,6 +124,13 @@ func _hit(at: Vector3) -> bool:
 			continue
 		if b.has_method("take_damage") and _damage > 0.0:
 			b.take_damage(_damage, at)
+		# Get hit normal via a short raycast from just behind the impact point.
+		var hit_normal: Vector3 = Vector3.UP
+		var from := at - _vel.normalized() * 0.3
+		var hit: Dictionary = _world.raycast(from, at + _vel.normalized() * 0.1)
+		if hit.get("hit", false) and hit.has("normal"):
+			hit_normal = hit["normal"]
+		ScorchFX.leave_mark(_world, at, hit_normal, b)
 		queue_free()
 		return true
 	return false

@@ -330,7 +330,8 @@ func _fire_round() -> void:
 		dir = Vector3(0.0, 0.0, -1.0)
 	if _mech.uses_cannonball():
 		CannonBall.spawn(_world, from, dir * MechBody.CANNON_SPEED,
-				MechBody.CANNON_DAMAGE, Color(0.2, 0.2, 0.22))
+				MechBody.CANNON_DAMAGE, Color(0.2, 0.2, 0.22),
+				MechBody.CANNON_BLAST_RADIUS, MechBody.CANNON_BLAST_IMPULSE)
 	else:
 		LightPlasma.spawn(_world, from, dir * BALL_SPEED, MechBody.CANNON_DAMAGE)
 
