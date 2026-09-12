@@ -13,20 +13,18 @@ extends Node3D
 ##   WASD / arrows   walk (camera-relative)
 ##   mouse           look (yaw/pitch around the mech)
 ##   Shift           sprint
-##   RMB (hold)      right-shoulder laser — a sustained beam, not an instant shot
-##   LMB             left-shoulder cannon — the gym's existing ball spawner
+##   RMB (hold)      right-shoulder reclaim laser — a sustained beam
+##   LMB             left-shoulder cannon — fired by the gym: plasma for
+##                   walker mechs, a lobbed cannonball for tanks
 ##
 ## The mech yaws to face its heading and the camera swings around it, keeping
 ## WASD tied to the viewport rather than the body (a tank-style feel without a
 ## turret).
 
-# Leg / turret animation tuning (procedural, on the model's joint pivots).
-const LEG_SWING := 0.55      # rad swing amplitude at full walk speed
-const LEG_RATE := 5.5        # rad of phase per metre travelled
+# Turret animation tuning (procedural, on the head's aiming pivot).
 const TURRET_SPEED := 6.0    # rad/s turret yaw/pitch smoothing toward the aim
 const TURRET_PITCH_MIN := -1.0  # rad, downward pitch limit
 const TURRET_PITCH_MAX := 1.6   # rad, upward pitch limit
-const TORSO_PITCH_FACTOR := 1.0  # fraction of the aim pitch the torso leans with
 const TORSO_PITCH_MAX := 0.9     # rad clamp on the torso lean
 
 const _Self = preload("res://lib/models/units/mech_body.gd")
@@ -67,13 +65,15 @@ const PUSH_FORCE := 8.0
 const PUSH_REACH := 0.45    # m beyond the capsule radius
 
 # Phase 2 weapons. Right-shoulder LASER: hold RMB for a sustained beam that
-# grinds HP off anything carrying take_damage. Left-shoulder CANNON: LMB lobs
-# a ball via the gym's existing spawner. Mech HP attrition feeds the death
+# grinds HP off anything carrying take_damage and MELTS loose debris (Phase 3).
+# Left-shoulder CANNON: the gym fires it on LMB — a plasma bolt for walker
+# mechs, a lobbed cannonball for tanks. Mech HP attrition feeds the death
 # placeholder (scene reload — design's accepted stand-in).
 const LASER_DPS := 10.0       # hp/s while the beam is on a target
 const LASER_RANGE := 50.0
 const LASER_THICK := 0.1
 const CANNON_DAMAGE := 10.0   # hp on the first body the plasma touches
+const CANNON_SPEED := 32.0    # m/s tank cannonball travel
 const MECH_HP := 100.0
 # Phase 3 absorption: the beam MELTS loose debris instead of damaging it — a
 # short sustained beam consumes a piece, feeding growth and restoring HP.
@@ -89,7 +89,8 @@ var jump_speed := JUMP_SPEED
 var hp := MECH_HP
 ## Phase 3 growth counter: loose debris consumed by the laser. Plain integer,
 ## no economy naming/spending yet (that is Phase 4).
-var absorbed_count := 0
+var _absorb_count := 0
+var _upgrade_threshold := 20
 
 var _char: Box3DCharacterBody
 var _world: Box3DWorld
@@ -98,8 +99,6 @@ var _torso: Node3D
 var _robot: Node3D
 var _body_part: Node3D   # the instanced body part (its script carries layout)
 var _head_part: Node3D   # the instanced head part (its script carries muzzles)
-var _leg_l: Node3D
-var _leg_r: Node3D
 var _turret: Node3D
 var _turret_pivot: Node3D   # pivot at the head mount the turret rotates around (see _build_visual)
 var _gun_tip: Node3D   # Marker3D in the head: cannon/plasma muzzle
@@ -111,7 +110,6 @@ var _reclaim_tip: Node3D   # Marker3D in the head: laser/reclaim muzzle
 # tracking (see _aim_turret). Falls back to Vector3.ZERO when there's no
 # GunTip marker, which _aim_turret treats as "barrel = pivot's own +Z".
 var _gun_fwd_local := Vector3.ZERO
-var _walk_phase := 0.0
 var _muzzle_r: Node3D   # right shoulder: the laser
 var _muzzle_l: Node3D   # left shoulder: the cannon
 var _laser_beam: MeshInstance3D
@@ -281,27 +279,24 @@ func _move(delta: float) -> void:
 		_torso.rotation.y = cur + diff * clampf(TURN_SPEED * delta, 0.0, 1.0)
 
 
-## Procedural rig: swing the two legs with a walk cycle (amplitude scaled by
-## how fast we're moving) and aim the turret head at the aim point.
+## Procedural rig: aim the turret head at the aim point, then let the body
+## part drive its own movement animation (walker legs swing, a tank hull stays
+## still). Each body part owns its walk phase and joints (mech_parts.gd /
+## tank_parts.gd).
 func _animate_parts(delta: float) -> void:
 	if _robot == null:
 		return
 	# Aim the turret first so the torso lean it produces is known before the
-	# legs are placed (they are children of the leaning torso and must
-	# counter-rotate to keep the feet planted).
+	# body part places its legs (they are children of the leaning torso and
+	# must counter-rotate to keep the feet planted).
 	_aim_turret(delta)
+	if _body_part == null or not is_instance_valid(_body_part):
+		return
+	if not _body_part.has_method("animate_parts"):
+		return
 	var move_speed := Vector2(_vel.x, _vel.z).length()
-	var amount := clampf(move_speed / WALK_SPEED, 0.0, 1.0)
-	if move_speed > 0.05:
-		_walk_phase += move_speed * LEG_RATE * delta
-	# Two legs, half a cycle apart; idle returns them to straight. The torso
-	# lean is subtracted so the feet stay on the ground while the body pitches.
-	var swing := LEG_SWING * amount
-	var lean := _torso.rotation.x if _torso != null else 0.0
-	if _leg_l != null:
-		_leg_l.rotation.x = -lean + swing * sin(_walk_phase)
-	if _leg_r != null:
-		_leg_r.rotation.x = -lean + swing * sin(_walk_phase + PI)
+	var torso_lean := _torso.rotation.x if _torso != null else 0.0
+	_body_part.animate_parts(delta, move_speed, torso_lean)
 
 
 ## Smoothly point the turret's barrel at the world-space aim point, on both
@@ -356,20 +351,23 @@ func _aim_turret(delta: float) -> void:
 
 	# Fix #1: flip world "look up" into this rig's local pitch convention. With
 	# the torso-lean split below, the barrel's total world pitch is the torso
-	# lean plus the pivot's own pitch, so the pivot only takes the remainder
-	# (factor 1.0 = the whole body leans and the turret stays level on it).
+	# lean plus the pivot's own pitch, so the pivot only takes the remainder.
 	var target_pitch := -world_pitch
 
-	# The torso leans up/down with the turret so the mech reads as aiming with
-	# its whole body. Kept on the same smoothing step as the pivot so they move
-	# together. Clamped so the body never over-leans.
+	# How much the whole torso leans with the aim: mech walkers lean their
+	# body (mech_parts.gd), tanks keep the hull level and only pitch the
+	# turret (tank_parts.gd returns 0). Kept on the same smoothing step as the
+	# pivot so they move together. Clamped so the body never over-leans.
+	var lean_factor: float = 1.0
+	if _body_part != null and is_instance_valid(_body_part) and _body_part.has_method("torso_lean"):
+		lean_factor = _body_part.torso_lean()
 	if _torso != null:
-		var torso_target := -world_pitch * TORSO_PITCH_FACTOR
+		var torso_target := -world_pitch * lean_factor
 		_torso.rotation.x += wrapf(torso_target - _torso.rotation.x, -PI, PI) * step
 		_torso.rotation.x = clampf(_torso.rotation.x, -TORSO_PITCH_MAX, TORSO_PITCH_MAX)
 
 	_turret_pivot.rotation.y += wrapf(target_yaw - _turret_pivot.rotation.y, -PI, PI) * step
-	_turret_pivot.rotation.x += wrapf(target_pitch * (1.0 - TORSO_PITCH_FACTOR) - _turret_pivot.rotation.x, -PI, PI) * step
+	_turret_pivot.rotation.x += wrapf(target_pitch * (1.0 - lean_factor) - _turret_pivot.rotation.x, -PI, PI) * step
 	_turret_pivot.rotation.x = clampf(_turret_pivot.rotation.x, TURRET_PITCH_MIN, TURRET_PITCH_MAX)
 
 
@@ -397,17 +395,35 @@ func _push_dynamics(delta: float) -> void:
 			body.apply_central_force(push_dir * PUSH_FORCE)
 
 
-## Right-shoulder laser: while RMB is held (and the mouse is captured), a
-## sustained beam grinds structural targets and MELTS loose debris (Phase 3).
+## Right trigger: the reclaim laser — grinds structural targets and MELTS
+## loose debris (Phase 3). A platform without a laser simply has no RMB weapon.
 func _weapon(delta: float) -> void:
 	var firing := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) \
 			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-	if firing:
+	if firing and _uses_laser():
 		_laser(delta)
 	else:
 		_reset_absorb()
 		if _laser_beam != null and _laser_beam.visible:
 			_laser_beam.visible = false
+
+
+## Whether this platform has a reclaim laser on the right trigger. Both the
+## walker mechs and the tanks carry one; anything without it gets no RMB weapon.
+func _uses_laser() -> bool:
+	if _body_part != null and is_instance_valid(_body_part) \
+			and _body_part.has_method("uses_laser"):
+		return _body_part.uses_laser()
+	return true
+
+
+## Whether this platform's LMB fires physics-free cannonballs instead of the
+## walker mech's plasma bolt. Tanks fire cannonballs; walkers fire plasma.
+func uses_cannonball() -> bool:
+	if _body_part != null and is_instance_valid(_body_part) \
+			and _body_part.has_method("uses_cannonball"):
+		return _body_part.uses_cannonball()
+	return false
 
 
 func _laser(delta: float) -> void:
@@ -444,7 +460,10 @@ func _absorb(target: Box3DBody, delta: float) -> void:
 		return
 	_absorb_progress = 0.0
 	_absorbing = null
-	absorbed_count += 1
+	_absorb_count += 1
+	if _absorb_count >= _upgrade_threshold:
+		_upgrade_threshold += 20
+		set_parts(ChibitankBody, ChibitankHead)
 	_heal(ABSORB_HEAL)
 	if is_instance_valid(target) and target.is_inside_tree():
 		FractureFX.burst(get_parent(), target.global_position, 0.6, Color(0.55, 0.85, 1.0))
@@ -603,16 +622,12 @@ func _build_visual() -> void:
 	_char.add_child(_torso)
 
 	# Instance the body part; its script carries the ground offset, the head
-	# mount point, and (for legged bodies) the leg joints.
+	# mount point, and (for legged bodies) the walk animation.
 	var body := body_scene.instantiate()
 	body.position = Vector3(0.0, body.visual_y_offset, 0.0)
 	_torso.add_child(body)
 	_robot = body
 	_body_part = body
-
-	# Legs: warbot walks, the tank does not.
-	_leg_l = _body_part.leg(true)
-	_leg_r = _body_part.leg(false)
 
 	# The head connects to the body's mount marker and aims around it. The
 	# pivot is created at the marker, under the mount's own parent so the head
@@ -672,8 +687,6 @@ func set_parts(new_body: PackedScene, new_head: PackedScene) -> void:
 	_robot = null
 	_body_part = null
 	_head_part = null
-	_leg_l = null
-	_leg_r = null
 	_turret = null
 	_turret_pivot = null
 	_gun_tip = null

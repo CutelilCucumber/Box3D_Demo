@@ -304,6 +304,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_tree().change_scene_to_file("res://scenes/demo/fire_gym.tscn")
 			KEY_5:
 				get_tree().change_scene_to_file("res://scenes/demo/car_gym.tscn")
+			KEY_6:
+				get_tree().change_scene_to_file("res://scenes/drone_city/drone_city_mech.tscn")
 			KEY_F11:
 				var mode := DisplayServer.window_get_mode()
 				DisplayServer.window_set_mode(
@@ -511,7 +513,7 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var help := Label.new()
-	help.text = "LMB shoot | RMB blast | B barrage | N nuke | C clear rubble | F ignite | V tornado | R reset | 1 tower | 2 landmarks | 3 city (re-press: size) | 4 fire | 5 derby\n" \
+	help.text = "LMB shoot | RMB blast | B barrage | N nuke | C clear rubble | F ignite | V tornado | R reset | 1 tower | 2 landmarks | 3 city (re-press: size) | 4 fire | 5 derby | 6 drone city\n" \
 			+ "Mouse look | WASD fly | E/Q up/down | Shift fast | wheel speed | Esc free cursor | F11 fullscreen | T charges | SPACE detonate | crane: G/H slew, J/K trolley, PgUp/Dn hoist"
 	help.position = Vector2(12, 8)
 	_style_label(help)

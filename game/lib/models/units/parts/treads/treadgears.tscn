@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://ys2sfubat6i7"]
+
+[ext_resource type="PackedScene" uid="uid://c7qgpktldcqpr" path="res://lib/models/units/parts/treads/chibitank_tread_l.tscn" id="1_0fhjp"]
+[ext_resource type="PackedScene" uid="uid://biok2yn71q3s2" path="res://lib/models/units/parts/treads/chibitank_tread_r.tscn" id="2_tirdn"]
+
+[node name="treads" type="Node3D" unique_id=1429256245]
+transform = Transform3D(0.9999999, 0, 0, 0, 0.9999999, 0, 0, 0, 0.9999999, 0, 0, 0)
+
+[node name="Tread_L" parent="." unique_id=1536837977 instance=ExtResource("1_0fhjp")]
+transform = Transform3D(0.897229, -4.2667975e-07, -0.44156545, -0.44156545, -8.088819e-07, -0.897229, 2.5655027e-08, 0.99999994, -9.1415944e-07, -0.6999999, 1.104756, -2.9999928)
+
+[node name="Tread_R" parent="." unique_id=18314468 instance=ExtResource("2_tirdn")]
+transform = Transform3D(0.897229, -4.2667975e-07, -0.44156545, -0.44156545, -8.088819e-07, -0.897229, 2.5655027e-08, 0.99999994, -9.1415944e-07, -0.6999999, 1.1047561, 0)

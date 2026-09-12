@@ -17,13 +17,14 @@ const MechBody := preload("res://lib/models/units/mech_body.gd")
 const LaserTurret := preload("res://lib/models/turrets/laser_turret.gd")
 const BoltTurret := preload("res://lib/models/turrets/bolt_turret.gd")
 const LightPlasma := preload("res://lib/models/projectiles/light_plasma.gd")
+const CannonBall := preload("res://lib/bodies/cannon_ball.gd")
 
 var _mech: Node3D = null
 var _health_bar: ProgressBar
 var _fill_style: StyleBoxFlat
 var _plasma_cooldown := 0.0
 ## Aim markers: replace the screen crosshair in mech mode. A reticle image on
-## the surface where the plasma will hit, plus a red dot where the laser hits.
+## the surface where the round will hit, plus a red dot where the laser hits.
 var _plasma_reticle: Sprite3D
 var _laser_dot: Sprite3D
 
@@ -34,6 +35,11 @@ const DOT_WORLD := 0.16       # m, laser-dot diameter on the surface
 const RETICLE_COLOR := Color(0.35, 0.9, 1.0, 0.95)
 const DOT_COLOR := Color(1.0, 0.22, 0.14, 1.0)
 
+## Tank cannon tuning: heavier round than the walker's plasma stream, so it
+## fires slower and its reticle reaches out further (the round lobs and rolls).
+const CANNON_INTERVAL := 0.4  # s between cannonballs while LMB is held
+const CANNON_RANGE := 90.0    # m, reticle raycast distance for cannonballs
+
 
 func _ready() -> void:
 	_free_fly = false
@@ -43,7 +49,7 @@ func _ready() -> void:
 	_set_mouse_captured(true)
 	_build_health_bar()
 	if _help_label != null:
-		_help_label.text = "WASD/arrows walk | mouse look | Shift sprint | Space jump | M mech mode | LMB plasma (auto) | RMB laser (melts debris) | B barrage | N nuke | F ignite | V tornado | R reset | 1-5 scenes"
+		_help_label.text = "WASD/arrows walk | mouse look | Shift sprint | Space jump | M mech mode | LMB fire (auto) | RMB laser (melts debris) | B barrage | N nuke | F ignite | V tornado | R reset | 1-5 scenes"
 
 
 func _process(delta: float) -> void:
@@ -56,9 +62,9 @@ func _physics_process(delta: float) -> void:
 	_auto_fire(delta)
 
 
-## Full-auto: while LMB is held and the mouse is captured, fire on the
-## projectile's cadence (LightPlasma.FIRE_INTERVAL). The press event (_shoot)
-## already fired once — this only sustains the stream.
+## Full-auto: while LMB is held and the mouse is captured, fire on the weapon's
+## cadence (the plasma stream or the slower tank cannon). The press event
+## (_shoot) already fired once — this only sustains the stream.
 func _auto_fire(delta: float) -> void:
 	if _free_fly or _mech == null:
 		return
@@ -67,8 +73,12 @@ func _auto_fire(delta: float) -> void:
 	_plasma_cooldown -= delta
 	if _plasma_cooldown > 0.0:
 		return
-	_plasma_cooldown = LightPlasma.FIRE_INTERVAL
-	_fire_plasma()
+	_plasma_cooldown = _fire_interval()
+	_fire_round()
+
+
+func _fire_interval() -> float:
+	return CANNON_INTERVAL if _mech.uses_cannonball() else LightPlasma.FIRE_INTERVAL
 
 
 ## In mech mode the aim reticles replace the screen crosshair; free-fly keeps
@@ -106,7 +116,8 @@ func _update_aim_markers() -> void:
 		_plasma_reticle.visible = false
 		_laser_dot.visible = false
 		return
-	_place_marker(_plasma_reticle, _mech.gun_tip(), _mech.cannon_dir(), LightPlasma.RANGE)
+	var round_range: float = CANNON_RANGE if _mech.uses_cannonball() else LightPlasma.RANGE
+	_place_marker(_plasma_reticle, _mech.gun_tip(), _mech.cannon_dir(), round_range)
 	_place_marker(_laser_dot, _mech.reclaim_tip(), _mech.laser_dir(), MechBody.LASER_RANGE)
 
 
@@ -289,35 +300,39 @@ func _update_help_label() -> void:
 	if _help_label == null:
 		return
 	var mode := "FREE-FLY" if _free_fly else "MECH"
-	_help_label.text = "WASD/arrows walk | mouse look | Shift sprint | Space jump | M mech mode | LMB plasma (auto) | RMB laser | B barrage | N nuke | F ignite | V tornado | R reset | 1-5 scenes"
+	_help_label.text = "WASD/arrows walk | mouse look | Shift sprint | Space jump | M mech mode | LMB fire (auto) | RMB laser (melts debris) | B barrage | N nuke | F ignite | V tornado | R reset | 1-5 scenes"
 	_help_label.text += " | [%s]" % mode
 
 
-## Mech mode: LMB fires the left-shoulder cannon. The round is a straight-line
-## kinematic bolt (light_plasma.gd) driven by hand — the fork's solver freezes
-## dynamic bodies spawned near the player character, so the bolt does its own
-## travel + overlap sweep. It fires along the turret's barrel direction; the
-## bolt keeps a straight line, so no lobbing arc, and dies at its RANGE.
-## Holding LMB keeps firing (see _auto_fire). Free-fly keeps the base
+## Mech mode: LMB fires the left-shoulder cannon. The round is a kinematic
+## projectile driven by hand — the fork's solver freezes dynamic bodies spawned
+## near the player character, so the round does its own travel + overlap sweep.
+## Walker mechs fire a straight-line plasma bolt (light_plasma.gd); tanks lob a
+## physics-free cannonball (cannon_ball.gd). Both fly along the turret's barrel
+## direction. Holding LMB keeps firing (see _auto_fire). Free-fly keeps the base
 ## cannonball toy.
 func _shoot(sp: Vector2) -> void:
 	if _free_fly or _mech == null:
 		super._shoot(sp)
 		return
 	# The press event fires once immediately; the hold sustains the stream.
-	_plasma_cooldown = LightPlasma.FIRE_INTERVAL
-	_fire_plasma()
+	_plasma_cooldown = _fire_interval()
+	_fire_round()
 
 
-func _fire_plasma() -> void:
+func _fire_round() -> void:
 	# Fire along the turret's barrel direction (from the pivot to the GunTip
-	# marker), not the crosshair ray — the bolt goes exactly where the head
+	# marker), not the crosshair ray — the round goes exactly where the head
 	# points.
 	var from: Vector3 = _mech.gun_tip()
 	var dir: Vector3 = _mech.cannon_dir()
 	if dir.length() < 0.01:
 		dir = Vector3(0.0, 0.0, -1.0)
-	LightPlasma.spawn(_world, from, dir * BALL_SPEED, MechBody.CANNON_DAMAGE)
+	if _mech.uses_cannonball():
+		CannonBall.spawn(_world, from, dir * MechBody.CANNON_SPEED,
+				MechBody.CANNON_DAMAGE, Color(0.2, 0.2, 0.22))
+	else:
+		LightPlasma.spawn(_world, from, dir * BALL_SPEED, MechBody.CANNON_DAMAGE)
 
 
 ## Mech mode: RMB is the laser, a physics-loop hold in the mech — so the base
@@ -332,4 +347,4 @@ func _blast(sp: Vector2, radius := BLAST_RADIUS, impulse := BLAST_IMPULSE) -> vo
 func _extra_stats() -> String:
 	if _mech == null or not is_instance_valid(_mech):
 		return ""
-	return " | hp %.0f | absorbed %d" % [maxf(_mech.hp, 0.0), _mech.absorbed_count]
+	return " | hp %.0f | absorbed %d" % [maxf(_mech.hp, 0.0), _mech._absorb_count]

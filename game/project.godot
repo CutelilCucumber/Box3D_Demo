@@ -22,6 +22,10 @@ _fennara_game_capture="*res://addons/fennara/runtime/game_capture_helper.gd"
 
 window/size/mode=0.0
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/road-generator/plugin.cfg", "res://addons/terrain_3d/plugin.cfg")
+
 [filesystem]
 
 import/blender/enabled=false

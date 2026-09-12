@@ -16,3 +16,17 @@ func _find_descendant(root: Node, marker_name: String) -> Node:
 		if found != null:
 			return found
 	return null
+
+
+## The left or right leg joint node, or null if this part has no legs. Bodies
+## with legs override this (see warbot_body.gd); heads and tracked hulls keep
+## the null default.
+func leg(_left: bool) -> Node3D:
+	return null
+
+
+## Whether this body's main gun fires physics-free cannonballs (tracked hulls)
+## instead of the walker mech's plasma bolt. Defaults to plasma; tank_parts.gd
+## overrides this.
+func uses_cannonball() -> bool:
+	return false

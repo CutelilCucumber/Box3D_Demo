@@ -1,9 +1,10 @@
-extends "res://lib/models/units/parts/mech_part.gd"
+extends "res://lib/models/units/parts/mech_parts.gd"
 
 ## Warbot (War Robot) body part for the modular mech. Exposes the head-mount
 ## marker (where the head attaches and aims around) and the two leg joints the
 ## mech's walk cycle drives. Per-part layout facts live here so mech_body.gd
-## can compose any body generically.
+## can compose any body generically. The walk animation and torso-lean live in
+## mech_parts.gd (this is a walker).
 
 ## How far the body root sits above its feet; applied to stand it on the ground.
 @export var visual_y_offset := -0.96
