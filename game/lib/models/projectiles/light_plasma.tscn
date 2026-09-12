@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://df0d4twtrot63"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_n3n8r"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_md4fb"]
+shading_mode = 0
+albedo_color = Color(1, 0.6666667, 0.08235294, 1)
+
+[node name="Shot" type="Node3D" unique_id=840074898]
+
+[node name="MeshInstance3D3" type="MeshInstance3D" parent="." unique_id=1273951551]
+transform = Transform3D(0.1, 0, 0, 0, -4.371139e-09, -0.1, 0, 0.1, -4.371139e-09, 0, 0, 0)
+transparency = 0.54
+cast_shadow = 0
+mesh = SubResource("CapsuleMesh_n3n8r")
+surface_material_override/0 = SubResource("StandardMaterial3D_md4fb")

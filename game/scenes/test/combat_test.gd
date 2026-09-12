@@ -9,8 +9,9 @@ extends Node3D
 ## Run: Godot --headless --path game res://scenes/test/combat_test.tscn
 
 const WallPanel := preload("res://lib/bodies/wall_panel.gd")
-const MechBody := preload("res://lib/bodies/mech_body.gd")
-const Turret := preload("res://lib/bodies/turret.gd")
+const MechBody := preload("res://lib/models/units/mech_body.gd")
+const LaserTurret := preload("res://lib/models/turrets/laser_turret.gd")
+const BoltTurret := preload("res://lib/models/turrets/bolt_turret.gd")
 const CannonBall := preload("res://lib/bodies/cannon_ball.gd")
 const BoxVis := preload("res://lib/fx/box_visuals.gd")
 
@@ -41,7 +42,7 @@ func _ready() -> void:
 	_hp0 = _mech.hp
 	# Far outside the turret's SIGHT_RANGE so it sleeps while we drive its
 	# damage by hand (and never shoots the mech during the panel phase).
-	_turret = Turret.spawn(_world, Vector3(100.0, 0.05, 100.0))
+	_turret = BoltTurret.spawn(_world, Vector3(100.0, 0.05, 100.0))
 
 
 func _build_world() -> void:
@@ -115,7 +116,10 @@ func _process(delta: float) -> void:
 				_step = 5
 		5:
 			if _t >= _fire_t + 1.2:
-				_turret2 = Turret.spawn(_world, Vector3(6.0, 0.05, 2.0))
+				# A laser (beam) and a bolt turret together, so the live fight
+				# wears the mech down through both attack types.
+				_turret2 = LaserTurret.spawn(_world, Vector3(6.0, 0.05, 2.0))
+				BoltTurret.spawn(_world, Vector3(8.0, 0.05, 2.0))
 				_step = 6
 		6:
 			if _t >= 6.5:  # several seconds of a live fight (beam + bolts)

@@ -16,8 +16,8 @@ const TAPE_YELLOW := Color(1.0, 0.85, 0.1)
 # Realistic Poly Haven prop models, decimated game-ready in Blender
 # (docs/research/asset-pipeline.md §3). Each is spawned as a dynamic Box3DBody so it
 # reacts to blasts like everything else -- see real_prop().
-const CrateScene := preload("res://lib/fx/models/props/wooden_crate.glb")
-const HydrantScene := preload("res://lib/fx/models/props/fire_hydrant.glb")
+const CrateScene := preload("res://lib/models/props/wooden_crate.glb")
+const HydrantScene := preload("res://lib/models/props/fire_hydrant.glb")
 
 
 static func _mat(color: Color, rough := 0.8, unshaded := false) -> StandardMaterial3D:

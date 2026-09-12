@@ -20,7 +20,7 @@ _fennara_game_capture="*res://addons/fennara/runtime/game_capture_helper.gd"
 
 [display]
 
-window/size/mode=3.0
+window/size/mode=0.0
 
 [filesystem]
 

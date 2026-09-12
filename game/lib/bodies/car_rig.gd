@@ -603,7 +603,7 @@ func is_upright() -> bool:
 # --- Visuals: shared cached meshes via BoxVis where possible; the few car-
 # specific pieces (tinted glass, tires) are cheap one-offs per car. ---
 
-const VEHICLE_MODEL_DIR := "res://lib/fx/models/vehicles/"
+const VEHICLE_MODEL_DIR := "res://lib/models/vehicles/"
 
 
 ## Basenames of every fetched vehicle .glb (empty until someone runs

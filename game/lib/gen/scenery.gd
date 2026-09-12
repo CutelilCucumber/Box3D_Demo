@@ -17,7 +17,7 @@ const WaterShader = preload("res://lib/fx/water.gdshader")
 ## height range]. The RAW Poly Haven trees are unusable direct -- pine_tree_01
 ## alone is a 905 MB mesh -- so they MUST be decimated first.
 const REALISTIC_TREES := [
-	[preload("res://lib/fx/models/trees/quiver_tree.glb"),
+	[preload("res://lib/models/trees/quiver_tree.glb"),
 			Color(0.34, 0.46, 0.28), Vector2(3.8, 5.5)],
 ]
 

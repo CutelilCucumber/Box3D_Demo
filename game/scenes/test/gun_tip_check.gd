@@ -1,6 +1,6 @@
 extends Node3D
 
-const MechBody := preload("res://lib/bodies/mech_body.gd")
+const MechBody := preload("res://lib/models/units/mech_body.gd")
 
 var _m
 var _t := 0.0

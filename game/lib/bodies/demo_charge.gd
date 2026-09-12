@@ -9,7 +9,7 @@ extends Node3D
 
 const ExplosionFX := preload("res://lib/fx/explosion_fx.gd")
 # "C4" by J-Toastie (poly.pizza/m/sDrFzJlbxy), CC-BY 3.0 -- see fx/textures/CREDITS.md
-const C4Scene := preload("res://lib/fx/models/c4.glb")
+const C4Scene := preload("res://lib/models/c4.glb")
 
 var blast_radius := 6.0
 var blast_impulse := 7.0

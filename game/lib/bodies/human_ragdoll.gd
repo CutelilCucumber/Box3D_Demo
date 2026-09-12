@@ -11,7 +11,7 @@ extends Node3D
 ##   HumanRagdoll.spawn(world, Vector3(x, 0, z), rng, yaw)
 
 const _Self = preload("res://lib/bodies/human_ragdoll.gd")
-const CHAR := preload("res://lib/fx/models/humans/man.glb")
+const CHAR := preload("res://lib/models/humans/man.glb")
 
 const HEIGHT := 1.8        # target standing height in metres
 const RAW_HEIGHT := 4.22   # the model's native height (feet->head)
