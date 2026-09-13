@@ -13,3 +13,13 @@ func gun_tip() -> Node3D:
 ## World muzzle of the reclaim laser.
 func reclaim_tip() -> Node3D:
 	return _find_descendant(self, "ReclaimTip") as Node3D
+
+
+## Chibi Tank fires cannonballs, not plasma.
+func uses_cannonball() -> bool:
+	return true
+
+
+## Chibi Tank carries the reclaim laser.
+func uses_laser() -> bool:
+	return true

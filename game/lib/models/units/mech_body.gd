@@ -23,8 +23,8 @@ extends Node3D
 
 # Turret animation tuning (procedural, on the head's aiming pivot).
 const TURRET_SPEED := 6.0    # rad/s turret yaw/pitch smoothing toward the aim
-const TURRET_PITCH_MIN := -1.0  # rad, downward pitch limit
-const TURRET_PITCH_MAX := 1.6   # rad, upward pitch limit
+const TURRET_PITCH_MIN := -1.57  # -PI/2, straight down
+const TURRET_PITCH_MAX := 1.57   # PI/2, straight up
 const TORSO_PITCH_MAX := 0.9     # rad clamp on the torso lean
 
 const _Self = preload("res://lib/models/units/mech_body.gd")
@@ -42,6 +42,11 @@ const ChibitankHead := preload("res://lib/models/units/parts/heads/chibitank_hea
 @export var body_scene: PackedScene = WarbotBody
 @export var head_scene: PackedScene = WarbotHead
 
+# Debug part cycling: [ and ] step through these sets (in order) at runtime.
+# Add future body/head scenes here to make them cycle-ready.
+const BODY_SETS: Array[PackedScene] = [WarbotBody, ChibitankBody]
+const HEAD_SETS: Array[PackedScene] = [WarbotHead, ChibitankHead]
+
 const WALK_SPEED := 4.0     # m/s
 const SPRINT_SPEED := 9.0   # m/s
 const ACCEL := 30.0         # m/s^2 toward the desired walk velocity
@@ -52,8 +57,8 @@ const TURN_SPEED := 10.0     # rad/s mech yaw toward its heading
 # Third-person camera rig.
 const CAM_DIST := 6.5       # m behind the mech
 const CAM_LIFT := 3.2       # m above the mech
-const CAM_PITCH_MIN := -0.9
-const CAM_PITCH_MAX := 0.6
+const CAM_PITCH_MIN := -1.57  # -PI/2, straight down
+const CAM_PITCH_MAX := 1.57   # PI/2, straight up
 const LOOK_SPEED := 0.0035  # rad per mouse pixel
 
 # Prop-shoving (see header). Push is a force, so it transfers momentum scaled
@@ -215,6 +220,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mm: InputEventMouseMotion = event
 		_yaw -= mm.relative.x * LOOK_SPEED
 		_pitch = clampf(_pitch - mm.relative.y * LOOK_SPEED, CAM_PITCH_MIN, CAM_PITCH_MAX)
+	elif event is InputEventKey and event.pressed and not event.echo:
+		# Debug part cycling: [ cycles the body, ] cycles the head.
+		match event.keycode:
+			KEY_BRACKETLEFT:
+				_cycle_body()
+			KEY_BRACKETRIGHT:
+				_cycle_head()
 
 
 ## Swing the follow camera around the mech on the current yaw/pitch, keeping it
@@ -421,10 +433,11 @@ func _uses_laser() -> bool:
 
 ## Whether this platform's LMB fires physics-free cannonballs instead of the
 ## walker mech's plasma bolt. Tanks fire cannonballs; walkers fire plasma.
+## Weapon type is determined by the HEAD part.
 func uses_cannonball() -> bool:
-	if _body_part != null and is_instance_valid(_body_part) \
-			and _body_part.has_method("uses_cannonball"):
-		return _body_part.uses_cannonball()
+	if _head_part != null and is_instance_valid(_head_part) \
+			and _head_part.has_method("uses_cannonball"):
+		return _head_part.uses_cannonball()
 	return false
 
 
@@ -647,6 +660,11 @@ func _build_visual() -> void:
 	_turret = head
 	_head_part = head
 
+	# Compensate for body root scale (e.g. chibitank at 0.111) so the head
+	# maintains a fixed world size regardless of which body it's on.
+	if _body_part != null and _body_part.has_method("get_head_scale"):
+		head.scale = Vector3.ONE * _body_part.get_head_scale()
+
 	# Weapon muzzles come from the head part's own markers.
 	_gun_tip = _head_part.gun_tip()
 	_reclaim_tip = _head_part.reclaim_tip()
@@ -695,6 +713,20 @@ func set_parts(new_body: PackedScene, new_head: PackedScene) -> void:
 	_reclaim_tip = null
 	_gun_fwd_local = Vector3.ZERO
 	_build_visual()
+
+
+## Step to the next body in BODY_SETS, wrapping around; keeps the current head.
+func _cycle_body() -> void:
+	var idx := BODY_SETS.find(body_scene)
+	var next := BODY_SETS[(idx + 1) % BODY_SETS.size()]
+	set_parts(next, head_scene)
+
+
+## Step to the next head in HEAD_SETS, wrapping around; keeps the current body.
+func _cycle_head() -> void:
+	var idx := HEAD_SETS.find(head_scene)
+	var next := HEAD_SETS[(idx + 1) % HEAD_SETS.size()]
+	set_parts(body_scene, next)
 
 
 func _build_camera() -> void:

@@ -10,18 +10,6 @@ func torso_lean() -> float:
 	return 0.0
 
 
-## Tanks carry the reclaim laser too — the right trigger is the same beam that
-## grinds structures and melts debris as on the walkers.
-func uses_laser() -> bool:
-	return true
-
-
-## Tank main guns fire physics-free cannonballs (cannon_ball.gd), not the
-## walker mech's plasma bolt.
-func uses_cannonball() -> bool:
-	return true
-
-
 ## No legs to swing; the tracks are static in this demo.
 func animate_parts(_delta: float, _move_speed: float, _torso_lean: float) -> void:
 	pass

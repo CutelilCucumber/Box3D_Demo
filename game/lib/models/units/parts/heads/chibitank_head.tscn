@@ -677,33 +677,33 @@ blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_xpmcn")
 
 [node name="chibi_head" type="Node3D" unique_id=415254341]
-transform = Transform3D(2.77, 0, 0, 0, 2.77, 0, 0, 0, 2.77, 0, 0, 0)
+transform = Transform3D(0.37, 0, 0, 0, 0.37, 0, 0, 0, 0.37, 0, 0, 0)
 script = ExtResource("1_part")
 
 [node name="turrent_container" type="Node3D" parent="." unique_id=727807800]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0.55, 0)
 
 [node name="barrelA" type="MeshInstance3D" parent="turrent_container" unique_id=165550913]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, -1.9308347, 1.03043, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, -0.33163488, -0.39083946, 0.017975774)
 mesh = SubResource("ArrayMesh_wsen8")
 
 [node name="barrelB" type="MeshInstance3D" parent="turrent_container/barrelA" unique_id=1706998157]
 mesh = SubResource("ArrayMesh_wycs1")
 
 [node name="rifling" type="MeshInstance3D" parent="turrent_container/barrelA" unique_id=980516772]
-transform = Transform3D(3.5762787e-07, -0.99999994, 0, 0.99999994, 3.5762787e-07, 0, 0, 0, 1, -0.6400002, -0.00054979324, 0)
+transform = Transform3D(3.1391644e-07, -0.99999994, 0, 0.99999994, 3.1391644e-07, 0, 0, 0, 1, -0.6400002, -0.00054979324, 0)
 mesh = SubResource("ArrayMesh_6ddla")
 
 [node name="bolts_3" type="MeshInstance3D" parent="turrent_container" unique_id=1813070899]
-transform = Transform3D(1.2526237, -7.900753e-09, 0.69091684, -1.4928179, -4.989948e-09, 0.5797483, -2.3230741e-07, -0.013952906, -6.451092e-07, 1.6724131, 1.1786883, 0.43887442)
+transform = Transform3D(0.17643182, -1.9546114e-09, 0.43694943, -0.2102631, -9.689332e-10, 0.3666443, -4.4779025e-08, -0.0031515802, -3.8371866e-07, 0.3487062, -0.35735214, 0.120242305)
 mesh = SubResource("ArrayMesh_smipt")
 
 [node name="top_hatch_plate" type="MeshInstance3D" parent="turrent_container" unique_id=410431822]
-transform = Transform3D(1.3347479, 0.29490075, 0, -0.23535219, 1.6724646, 0, 0, 0, 1.5092063, -0.19074947, 2.374523, -0.013887444)
+transform = Transform3D(0.3191966, 0.055943336, 0, -0.056283012, 0.31727022, 0, 0, 0, 0.34088844, -0.003083676, -0.08724558, 0.017975774)
 mesh = SubResource("ArrayMesh_ux86f")
 
 [node name="bolts_2" type="MeshInstance3D" parent="turrent_container/top_hatch_plate" unique_id=1616761743]
-transform = Transform3D(1, 0, 0, 0, -7.1525574e-07, 1, 0, -1, -7.1525574e-07, 0.6761524, -0.120492876, 0.24269405)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.6761524, -0.120492876, 0.24269405)
 mesh = SubResource("ArrayMesh_8dilk")
 
 [node name="top_hatch" type="MeshInstance3D" parent="turrent_container/top_hatch_plate" unique_id=1003508986]
@@ -717,31 +717,31 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.028967597, 0)
 mesh = SubResource("ArrayMesh_f55xa")
 
 [node name="turret_body" type="MeshInstance3D" parent="turrent_container" unique_id=1371840054]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, 0.18205446, 0.9544526, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, 0.06730664, -0.4080006, 0.017975774)
 mesh = SubResource("ArrayMesh_5ha0o")
 
 [node name="turret_body_cylinder" type="MeshInstance3D" parent="turrent_container" unique_id=1313368427]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, 1.9931021, 0.34838453, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, 0.40925652, -0.5448948, 0.017975774)
 mesh = SubResource("ArrayMesh_lpfrg")
 
 [node name="turret_body_cylinder_holder" type="MeshInstance3D" parent="turrent_container" unique_id=107174403]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, 1.9931021, 0.34838453, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, 0.40925652, -0.5448948, 0.017975774)
 mesh = SubResource("ArrayMesh_fp54s")
 
 [node name="turret_body_front" type="MeshInstance3D" parent="turrent_container" unique_id=406802203]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, 0.18205446, 0.9544526, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, 0.06730664, -0.4080006, 0.017975774)
 mesh = SubResource("ArrayMesh_fe51p")
 
 [node name="turret_body_plate" type="MeshInstance3D" parent="turrent_container" unique_id=2054355695]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, 0.18205446, 0.9544526, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, 0.06730664, -0.4080006, 0.017975774)
 mesh = SubResource("ArrayMesh_tfgmy")
 
 [node name="turret_body_plate_back" type="MeshInstance3D" parent="turrent_container" unique_id=1975181994]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, 0.18205446, 0.9544526, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, 0.06730664, -0.4080006, 0.017975774)
 mesh = SubResource("ArrayMesh_rv1mv")
 
 [node name="GunTip" type="Marker3D" parent="turrent_container" unique_id=1186459413]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, -4.099017, 0.9910543, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, -0.7410166, -0.39973342, 0.017975774)
 
 [node name="ReclaimTip" type="Marker3D" parent="turrent_container" unique_id=1371491824]
-transform = Transform3D(1.5092063, 0, 0, 0, 1.5195642, 0, 0, 0, 1.5092063, -4.099017, 0.9910543, -0.013887444)
+transform = Transform3D(0.2849582, 0, 0, 0, 0.343228, 0, 0, 0, 0.34088844, -0.7410166, -0.39973342, 0.017975774)

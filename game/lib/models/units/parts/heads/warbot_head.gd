@@ -12,3 +12,13 @@ func gun_tip() -> Node3D:
 ## World muzzle of the reclaim laser.
 func reclaim_tip() -> Node3D:
 	return _find_descendant(self, "ReclaimTip") as Node3D
+
+
+## Warbot uses plasma bolts, not cannonballs.
+func uses_cannonball() -> bool:
+	return false
+
+
+## Warbot carries the reclaim laser.
+func uses_laser() -> bool:
+	return true

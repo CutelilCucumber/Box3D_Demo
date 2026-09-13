@@ -26,7 +26,21 @@ func leg(_left: bool) -> Node3D:
 
 
 ## Whether this body's main gun fires physics-free cannonballs (tracked hulls)
-## instead of the walker mech's plasma bolt. Defaults to plasma; tank_parts.gd
-## overrides this.
+## instead of the walker mech's plasma bolt. Defaults to plasma; HEAD parts
+## override this (see warbot_head.gd, chibitank_head.gd).
 func uses_cannonball() -> bool:
 	return false
+
+
+## Whether this platform has a reclaim laser on the right trigger. Both the
+## walker mechs and the tanks carry one; anything without it gets no RMB weapon.
+## HEAD parts override this (see warbot_head.gd, chibitank_head.gd).
+func uses_laser() -> bool:
+	return false
+
+
+## Scale compensation for the head when mounted on this body.
+## Bodies with non-unity root scale (e.g. chibitank at 0.111) should override
+## to return the inverse so the head maintains a fixed world size.
+func get_head_scale() -> float:
+	return 1.0

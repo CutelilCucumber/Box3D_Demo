@@ -8,7 +8,7 @@ extends "res://lib/models/units/parts/tank_parts.gd"
 ## match the warbot's height.
 
 ## How far the body root sits above its feet; applied to stand it on the ground.
-@export var visual_y_offset := 0.0
+@export var visual_y_offset := -0.96
 
 ## The marker where the head part connects and rotates around.
 func mount_marker() -> Node3D:
@@ -19,3 +19,9 @@ func mount_marker() -> Node3D:
 ## is on the body root itself.
 func mount_parent() -> Node3D:
 	return self
+
+
+## The chibitank root is scaled to 0.111 to match warbot height.
+## Return the inverse so the head maintains a fixed world size.
+func get_head_scale() -> float:
+	return 1.0 / 0.111
