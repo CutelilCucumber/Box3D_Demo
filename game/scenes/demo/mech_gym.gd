@@ -16,6 +16,7 @@ extends "res://scenes/demo/city_gym.gd"
 const MechBody := preload("res://lib/models/units/mech_body.gd")
 const LaserTurret := preload("res://lib/models/turrets/laser_turret.gd")
 const BoltTurret := preload("res://lib/models/turrets/bolt_turret.gd")
+const WarbotEnemy := preload("res://lib/models/units/warbot_enemy.gd")
 const LightPlasma := preload("res://lib/models/projectiles/light_plasma.gd")
 const CannonBall := preload("res://lib/bodies/cannon_ball.gd")
 
@@ -215,6 +216,12 @@ func _mount_mech() -> void:
 	# positions so verification runs the same fight every reload.
 	LaserTurret.spawn(_world, Vector3(14.0, 0.05, 7.5))
 	BoltTurret.spawn(_world, Vector3(-14.0, 0.05, -7.5))
+
+	# Mobile warbot enemies at city intersections
+	WarbotEnemy.spawn(_world, Vector3(20.0, 0.05, 20.0))
+	WarbotEnemy.spawn(_world, Vector3(-20.0, 0.05, -20.0))
+	WarbotEnemy.spawn(_world, Vector3(30.0, 0.05, 0.0))
+	WarbotEnemy.spawn(_world, Vector3(-30.0, 0.05, 0.0))
 
 
 ## Death placeholder: a clean scene reload (design's accepted stand-in).
