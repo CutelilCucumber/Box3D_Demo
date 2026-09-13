@@ -227,16 +227,19 @@ func _flash_tick() -> void:
 		_set_flash(false)
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if not _active:
 		return
-	# Mouse look: only while captured, and never consume the event so the gym's
-	# key handling (scene switch, blasts) keeps working.
+	# Mouse look: _input runs before UI, so captured mouse events arrive here reliably.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var mm: InputEventMouseMotion = event
 		_yaw -= mm.relative.x * LOOK_SPEED
 		_pitch = clampf(_pitch - mm.relative.y * LOOK_SPEED, CAM_PITCH_MIN, CAM_PITCH_MAX)
-	elif event is InputEventMouseButton:
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Scroll zoom and part cycling (not mouse look).
+	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event
 		if mb.pressed:
 			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:

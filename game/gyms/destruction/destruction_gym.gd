@@ -121,6 +121,7 @@ const SLOWMO_RAMP_MS := 450  # real milliseconds ramping back to 1.0
 func _process(delta: float) -> void:
 	# Free-fly (FPS floating): the mouse looks, WASD flies where you're aiming,
 	# E/Q rise and dive, Shift sprints.
+
 	var move := Vector3.ZERO
 	var basis := Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
 	if _free_fly and _key_down(KEY_W):
@@ -223,6 +224,16 @@ func _extra_stats() -> String:
 	return ""
 
 
+func _input(event: InputEvent) -> void:
+	# Free-fly mouse look: _input runs before UI, so captured mouse events arrive here reliably.
+	if _free_fly and _mouse_captured and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if event is InputEventMouseMotion:
+			var mm: InputEventMouseMotion = event
+			_yaw -= mm.relative.x * 0.0025
+			_pitch -= mm.relative.y * 0.0025
+			_update_camera()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event
@@ -247,11 +258,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if mb.pressed:
 					_fly_speed = clampf(_fly_speed / 1.15, 2.0, 120.0)
-	elif event is InputEventMouseMotion and _mouse_captured and _free_fly:
-		var mm: InputEventMouseMotion = event
-		_yaw -= mm.relative.x * 0.0025
-		_pitch -= mm.relative.y * 0.0025
-		_update_camera()
 	elif event is InputEventKey:
 		var key: InputEventKey = event
 		if not key.pressed or key.echo:
