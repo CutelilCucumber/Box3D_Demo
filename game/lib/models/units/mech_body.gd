@@ -60,6 +60,20 @@ const CAM_LIFT := 3.2       # m above the mech
 const CAM_PITCH_MIN := -1.57  # -PI/2, straight down
 const CAM_PITCH_MAX := 1.57   # PI/2, straight up
 const LOOK_SPEED := 0.0035  # rad per mouse pixel
+# When aiming down, ease the camera higher and closer so the turret doesn't
+# block the view of the target. Factors are exposed for tuning.
+const CAM_AIM_LIFT_MULT := 1.5   # CAM_LIFT x when fully aiming down
+const CAM_AIM_DIST_MULT := 0.7   # distance x when fully aiming down
+# Camera collision: raycast from just behind the mech's capsule to the desired
+# camera spot; on a hit, pull the camera in front of the obstacle by this margin.
+const CAM_COLLIDE_MARGIN := 0.3
+const CAM_RAY_START := 0.7    # behind the focus point, past the capsule radius
+const CAM_SMOOTH := 12.0    # lerp speed toward the (collided) camera spot
+# Zoom tuning.
+const CAM_DIST_MIN := 2.0   # closest zoom (scroll in)
+const CAM_DIST_MAX := 12.0  # farthest zoom (scroll out)
+const CAM_ZOOM_STEP := 1.5  # distance changed per scroll notch
+const CAM_ZOOM_SMOOTH := 6.0  # lerp speed toward the target distance
 
 # Prop-shoving (see header). Push is a force, so it transfers momentum scaled
 # to each prop's own mass — but the demo's props are VERY light (a crate is
@@ -131,6 +145,8 @@ var _pitch := -0.18
 var _heading := 0.0
 var _push_pool := []
 var _active := true
+var _cam_dist := CAM_DIST        # runtime zoom distance, eased by scroll
+var _cam_target_dist := CAM_DIST # unscaled target zoom from the scroll wheel
 
 
 ## Build a mech under `world` at ground position `at`, returning the controller.
@@ -220,6 +236,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mm: InputEventMouseMotion = event
 		_yaw -= mm.relative.x * LOOK_SPEED
 		_pitch = clampf(_pitch - mm.relative.y * LOOK_SPEED, CAM_PITCH_MIN, CAM_PITCH_MAX)
+	elif event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event
+		if mb.pressed:
+			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_cam_target_dist = clampf(_cam_target_dist - CAM_ZOOM_STEP, CAM_DIST_MIN, CAM_DIST_MAX)
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_cam_target_dist = clampf(_cam_target_dist + CAM_ZOOM_STEP, CAM_DIST_MIN, CAM_DIST_MAX)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		# Debug part cycling: [ cycles the body, ] cycles the head.
 		match event.keycode:
@@ -230,12 +253,43 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 ## Swing the follow camera around the mech on the current yaw/pitch, keeping it
-## above ground so it can't sink through a slope.
+## above ground so it can't sink through a slope. The distance eases toward the
+## scroll-wheel target; when the player aims down, the camera rises and pulls
+## closer so the turret/mech doesn't block the target. A raycast from the focus
+## point to the desired spot keeps the camera from phasing through the world.
 func _look(delta: float) -> void:
 	var target := _char.global_position
-	_camera.global_position = target + Vector3(
-			sin(_yaw) * CAM_DIST, CAM_LIFT, cos(_yaw) * CAM_DIST)
-	_camera.look_at(target + Vector3.UP * 1.0, Vector3.UP)
+
+	# Ease the zoom distance toward the scroll target.
+	_cam_dist = lerpf(_cam_dist, _cam_target_dist, clampf(CAM_ZOOM_SMOOTH * delta, 0.0, 1.0))
+
+	# When aiming down (pitch < 0), raise the lift and shorten the distance so
+	# the target stays visible over the mech's shoulder. Fully at CAM_PITCH_MIN.
+	var aim_factor := clampf(-_pitch / absf(CAM_PITCH_MIN), 0.0, 1.0)
+	var lift := lerpf(CAM_LIFT, CAM_LIFT * CAM_AIM_LIFT_MULT, aim_factor)
+	var dist := lerpf(_cam_dist, _cam_dist * CAM_AIM_DIST_MULT, aim_factor)
+
+	# Desired camera spot in world space.
+	var back := Vector3(sin(_yaw), 0.0, cos(_yaw))
+	var focus := target + Vector3.UP * 1.0
+	var desired := focus + back * dist + Vector3.UP * lift
+
+	# Collide the camera against the world: raycast from just behind the mech's
+	# capsule (so the ray doesn't hit the mech itself) toward the desired spot;
+	# if something is in the way, pull the camera in front of it by a margin.
+	var spot := desired
+	if _world != null:
+		var ray_from := focus + back * CAM_RAY_START
+		var hit: Dictionary = _world.raycast(ray_from, desired)
+		if hit.get("hit", false):
+			var to_spot := desired - ray_from
+			if to_spot.length_squared() > 0.0001:
+				spot = (hit["position"] as Vector3) - to_spot.normalized() * CAM_COLLIDE_MARGIN
+
+	# Smooth the camera position toward the spot to avoid jarring pops.
+	_camera.global_position = _camera.global_position.lerp(spot, clampf(CAM_SMOOTH * delta, 0.0, 1.0))
+
+	_camera.look_at(focus, Vector3.UP)
 	_camera.rotation_degrees.x += rad_to_deg(_pitch)
 	# Keep the camera above the ground so it can't drop through a slope.
 	var gpos := _camera.global_position
