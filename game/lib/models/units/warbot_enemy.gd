@@ -167,9 +167,13 @@ func _fire_if_ready(delta: float) -> void:
 func _fire_plasma() -> void:
 	if _gun_tip == null or _world == null:
 		return
-	var dir := -_gun_tip.global_transform.basis.z
-	var from := _gun_tip.global_position + dir * 1.0  # spawn in front of muzzle
-	LightPlasma.spawn(_world, from, dir * BOLT_SPEED, BOLT_DAMAGE, _find_mech())
+	var mech := _find_mech()
+	if mech == null:
+		return
+	var from := _gun_tip.global_position
+	var target := _mech_hit_center(mech)
+	var dir := (target - from).normalized()
+	LightPlasma.spawn(_world, from + dir * 1.0, dir * BOLT_SPEED, BOLT_DAMAGE, mech, 0.0, self)
 
 
 func _flash_tick() -> void:

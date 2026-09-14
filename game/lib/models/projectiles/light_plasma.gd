@@ -8,7 +8,7 @@ extends Node3D
 ## target so bolts aimed at the player's kinematic character (which has no
 ## physics proxy) still land.
 ##
-##   LightPlasma.spawn(world, from, velocity, damage [, mech [, range]])
+##   LightPlasma.spawn(world, from, velocity, damage [, mech [, range [, owner]]])
 
 const _Self = preload("res://lib/models/projectiles/light_plasma.gd")
 const PlasmaScene = preload("res://lib/models/projectiles/light_plasma.tscn")
@@ -28,16 +28,18 @@ var _age := 0.0
 var _mech: Node3D = null   # optional player mech to hit (turret bolts)
 var _range := RANGE        # hard max travel distance; 0 = no range cap
 var _travelled := 0.0
+var _owner: Node3D = null  # the entity that fired this bolt (for friendly-fire avoidance)
 
 
 static func spawn(world: Box3DWorld, from: Vector3, vel: Vector3,
-		damage: float, mech: Node3D = null, max_range := RANGE) -> Node3D:
+		damage: float, mech: Node3D = null, max_range := RANGE, owner: Node3D = null) -> Node3D:
 	var b := _Self.new()
 	b._world = world
 	b._vel = vel
 	b._damage = damage
 	b._mech = mech
 	b._range = max_range
+	b._owner = owner
 	b.position = from
 	world.add_child(b)
 	b.add_child(PlasmaScene.instantiate())
@@ -82,7 +84,7 @@ func _physics_process(delta: float) -> void:
 			return
 	var prev := global_position
 	global_position += _vel * delta
-	if _hit_player():
+	if _hit_player(prev):
 		return
 	# Sweep the whole travelled segment (a fast bolt can skip a thin panel if
 	# we only probe the final point).
@@ -94,23 +96,41 @@ func _physics_process(delta: float) -> void:
 
 
 ## The player mech is a kinematic mover whose character body is not a
-## Box3DBody, so the overlap sweep can't catch it — test proximity to its char
-## body directly instead.
-func _hit_player() -> bool:
-	if _mech == null or not is_instance_valid(_mech) \
-			or not _mech.has_method("char_body"):
+## Box3DBody, so the overlap sweep can't catch it — test proximity to its
+## AIM CENTER (hit_center), not its capsule center. The bolt aims at hit_center
+## (y≈1.85) but the capsule center is 0.9m lower; the 0.65m threshold would
+## never be met against the lower point. Checking the aim point makes the
+## bolt hit when it reaches the target.
+func _hit_player(at: Vector3) -> bool:
+	if _mech == null or not is_instance_valid(_mech) or not _mech.has_method("hit_center"):
 		return false
-	var cb: Box3DCharacterBody = _mech.char_body()
-	if cb == null or not is_instance_valid(cb):
+	var center: Vector3 = _mech.hit_center()
+	if at.distance_to(center) > SWEEP + 0.5:
 		return false
-	if global_position.distance_to(cb.global_position) > SWEEP + 0.5:
-		return false
-	_mech.take_damage(_damage, cb.global_position)
+	_mech.take_damage(_damage, center)
 	# Scorch on the mech's approximate surface facing the bolt.
 	var hit_normal: Vector3 = -_vel.normalized()
-	ScorchFX.leave_mark(_world, global_position, hit_normal, null, 0.4, 5.0)
+	ScorchFX.leave_mark(_world, at, hit_normal, null, 0.4, 5.0)
 	queue_free()
 	return true
+
+
+## Enemy characters (Box3DCharacterBody) are not returned by overlap_sphere —
+## only Box3DBody nodes are. Check the "enemy" group by proximity.
+## Skip the bolt's owner to prevent self-hit / friendly fire.
+func _hit_enemy(at: Vector3) -> bool:
+	if _world == null:
+		return false
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if e is Box3DCharacterBody and is_instance_valid(e) and e.has_method("take_damage") and e != _owner:
+			if at.distance_to(e.global_position) < SWEEP + 1.0:
+				e.take_damage(_damage, e.global_position)
+				# Scorch on the enemy's approximate surface facing the bolt.
+				var hit_normal: Vector3 = -_vel.normalized()
+				ScorchFX.leave_mark(_world, at, hit_normal, null, 0.4, 5.0)
+				queue_free()
+				return true
+	return false
 
 
 ## Check one sample point for contact. Frees the bolt and deals damage on the
@@ -132,5 +152,8 @@ func _hit(at: Vector3) -> bool:
 			hit_normal = hit["normal"]
 		ScorchFX.leave_mark(_world, at, hit_normal, b)
 		queue_free()
+		return true
+	# Character bodies (enemies, player mech) are not returned by overlap_sphere.
+	if _hit_enemy(at):
 		return true
 	return false
