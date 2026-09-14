@@ -273,6 +273,9 @@ func _update_health_bar() -> void:
 func _extra_key(code: int) -> void:
 	if code == KEY_M:
 		_toggle_mech_mode()
+	elif code == KEY_I:
+		_mech.set_invincible(not _mech._invincible)
+		print("Invincibility: %s" % (_mech._invincible if _mech._invincible else "OFF"))
 	else:
 		super._extra_key(code)
 

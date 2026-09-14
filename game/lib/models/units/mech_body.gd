@@ -108,6 +108,7 @@ var jump_speed := JUMP_SPEED
 ## Mech HP: the turret's beam/projectile chip at this; at 0 `died` fires and
 ## the gym reloads the scene (design's accepted placeholder for death).
 var hp := MECH_HP
+var _invincible := false
 ## Phase 3 growth counter: loose debris consumed by the laser. Plain integer,
 ## no economy naming/spending yet (that is Phase 4).
 var _absorb_count := 0
@@ -171,6 +172,10 @@ func is_active() -> bool:
 	return _active
 
 
+func set_invincible(invincible: bool) -> void:
+	_invincible = invincible
+
+
 func _ready() -> void:
 	add_to_group("player")
 	_build_body()
@@ -196,7 +201,7 @@ func _physics_process(delta: float) -> void:
 ## accepted placeholder). A short red flash marks the hit — timed on the
 ## real clock, purely visual.
 func take_damage(amount: float, _at: Vector3) -> void:
-	if hp <= 0.0:
+	if _invincible or hp <= 0.0:
 		return
 	hp -= amount
 	_flash_until = Time.get_ticks_msec() + 120.0

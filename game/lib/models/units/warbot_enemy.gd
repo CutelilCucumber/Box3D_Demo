@@ -16,9 +16,9 @@ const WALK_SPEED := 3.0           # m/s
 const TURN_SPEED := 6.0           # rad/s
 const ATTACK_RANGE := 15.0        # m, stop and shoot
 const SIGHT_RANGE := 40.0         # m, aggro distance
-const FIRE_INTERVAL := 1.5        # s between bolts
-const BOLT_SPEED := 24.0          # m/s, slower than player's plasma
-const BOLT_DAMAGE := 15.0         # hp per hit
+const FIRE_INTERVAL := .5       # s between bolts
+const BOLT_SPEED := 40.0          # m/s, slower than player's plasma
+const BOLT_DAMAGE := 5.0         # hp per hit
 const HP := 60.0
 
 var _world: Box3DWorld
