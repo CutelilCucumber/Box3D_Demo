@@ -486,15 +486,17 @@ func _weapon(delta: float) -> void:
 
 ## Whether this platform has a reclaim laser on the right trigger. Both the
 ## walker mechs and the tanks carry one; anything without it gets no RMB weapon.
-func _uses_laser() -> bool:
-	if _body_part != null and is_instance_valid(_body_part) \
-			and _body_part.has_method("uses_laser"):
-		return _body_part.uses_laser()
-	return true
-
 
 ## Whether this platform's LMB fires physics-free cannonballs instead of the
 ## walker mech's plasma bolt. Tanks fire cannonballs; walkers fire plasma.
+## Whether this platform has a reclaim laser on the right trigger. Both the
+## walker mechs and the tanks carry one; anything without it gets no RMB weapon.
+func _uses_laser() -> bool:
+	if _head_part != null and is_instance_valid(_head_part) \
+			and _head_part.has_method("uses_laser"):
+		return _head_part.uses_laser()
+	return false
+
 ## Weapon type is determined by the HEAD part.
 func uses_cannonball() -> bool:
 	if _head_part != null and is_instance_valid(_head_part) \

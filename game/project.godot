@@ -36,3 +36,6 @@ wind_vec={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
+
+[run]
+editor/embedded_game = true
