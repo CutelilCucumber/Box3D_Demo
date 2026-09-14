@@ -29,5 +29,6 @@ venv/
 
 # Local working note — scratch, not part of the public demo.
 DEMO_SYNC.md
-AGENT-setup.md
-AGENTS.md
+Agents.md
+Blender destructible assets guide.md
+Mech design doc.md

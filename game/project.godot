@@ -30,12 +30,13 @@ enabled=PackedStringArray("res://addons/road-generator/plugin.cfg", "res://addon
 
 import/blender/enabled=false
 
+[run]
+
+editor/embedded_game=true
+
 [shader_globals]
 
 wind_vec={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
-
-[run]
-editor/embedded_game = true
