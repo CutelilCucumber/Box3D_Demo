@@ -36,6 +36,9 @@ static var _rng := RandomNumberGenerator.new()
 
 var block_color := Color(0.78, 0.68, 0.52)
 var cast_shadows := true  # debris chunks turn this off to spare the GPU
+## Structural skeleton pieces hide their box visual (the structure's skin mesh
+## stands in for them): true by default, false for invisible structure.
+var emit_visual := true
 ## Wooden chunks register with the fire system and burn (fire_system.gd).
 var flammable := false
 ## Fracture depth. Hand-placed blocks and panel-spawned chunks start at 1;
@@ -78,6 +81,8 @@ func _ready() -> void:
 		add_to_group("flammable")
 	_born_tick = Engine.get_physics_frames()
 	body_entered.connect(_on_body_entered)
+	if not emit_visual:
+		return
 	if shard_mesh != null:
 		shape_type = Box3DBody.HULL
 		collision_mesh = shard_mesh

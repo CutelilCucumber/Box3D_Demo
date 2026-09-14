@@ -102,8 +102,8 @@ func _process(delta: float) -> void:
 		4:
 			if _t >= _fire_t + 0.8:
 				var travelled: float = _cball_pos.distance_to(_cball_start)
-				var hurt: bool = _cpanel.hp < _cpanel_hp0 \
-						or not is_instance_valid(_cpanel)
+				var hurt: bool = not is_instance_valid(_cpanel) \
+						or _cpanel.hp < _cpanel_hp0
 				print("[combat] cannon round travelled %.1f m, panel hp %.0f" % [
 					travelled, _cpanel.hp if is_instance_valid(_cpanel) else 0.0])
 				_check(travelled > 2.0,

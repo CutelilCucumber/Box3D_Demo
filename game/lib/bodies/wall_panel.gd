@@ -15,6 +15,11 @@ const FRACTURE_SPEED := 7.0  # m/s relative impact speed that cracks a panel
 const MAX_BRICKS := 3000  # global cap: past this, panels stop crumbling
 const SPAWN_GRACE_TICKS := 21  # contacts ignored this long after spawn (depenetration)
 const DEFAULT_HP := 60.0  # Phase 2 HP attrition: laser/cannon grind this down
+# Metal construction (drone-city structures): stronger than masonry — tougher
+# impact threshold and more HP before it gives way, but still destructible
+# (unlike "steel", which is cut-only).
+const METAL_FRACTURE_SPEED := 16.0  # m/s needed to crack a metal panel
+const METAL_HP := 180.0
 
 var panel_color := Color(0.84, 0.76, 0.66)
 ## World-triplanar facade texture: adjacent panels sample it continuously in
@@ -25,7 +30,13 @@ var fracture_speed := FRACTURE_SPEED
 ## Structural material: "masonry" (default) fractures normally; "steel" only
 ## yields to cutting charges / the torch (speed >= STEEL_CUT_SPEED) -- blasts
 ## and boreholes rattle it, debris bounces off; "wood" is set by wood_gen.
+## "metal" (drone-city structures) is durable but destructible: it needs a
+## harder hit (METAL_FRACTURE_SPEED) and a lot more HP attrition, then yields
+## like masonry (see _ready).
 var material := "masonry"
+## Structural pieces hide their box visual (the structure's skin mesh stands in
+## for them): true by default, false for the invisible skeleton under a skin.
+var emit_visual := true
 ## Wood panels register with the fire system and burn (fire_system.gd).
 var flammable := false
 var fire_moisture := 0.05
@@ -56,13 +67,21 @@ func _ready() -> void:
 	_base_fracture = fracture_speed
 	_base_color = panel_color
 	_born_tick = Engine.get_physics_frames()
+	# Metal construction: durable but destructible. Tougher fracture threshold
+	# and much more HP before it gives way; once it does, it fractures like
+	# masonry (no cut-only gate).
+	if material == "metal":
+		fracture_speed = METAL_FRACTURE_SPEED
+		_base_fracture = fracture_speed
+		hp = METAL_HP
 	# NB: the rebuilt binding exposes body_hit (real approach speed + contact
 	# point), but the structural fracture thresholds are calibrated to this
 	# velocity-diff estimate -- swapping in the lower normal-approach speed
 	# under-fractures and leaves too much of the structure standing.
 	# Adopting body_hit here is a dedicated re-calibration pass.
 	body_entered.connect(_on_body_entered)
-	BoxVis.box(self, box_size, panel_color, true, facade_tex)
+	if emit_visual:
+		BoxVis.box(self, box_size, panel_color, true, facade_tex)
 
 
 ## Fuel description for the fire system (FireSim.add_item).

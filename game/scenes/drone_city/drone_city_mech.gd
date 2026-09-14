@@ -15,9 +15,24 @@ extends "res://scenes/demo/mech_gym.gd"
 
 const DroneCityScene := preload("res://scenes/drone_city/drone_city.tscn")
 const DroneBuilding := preload("res://lib/gen/drone_city_building.gd")
+const StructureController := preload("res://lib/gen/structure_controller.gd")
 
 const CITY_GROUND_TOP := 0.39   # the city's flat ground mesh sits at this y
 const GROUND_SPAN := 210.0      # a little larger than the 192 m city
+
+## Building styles that get a real destructible skeleton (panels, glass,
+## metal columns) with the imported mesh as a skin: matched by mesh name prefix.
+const STRUCTURAL_STYLES := [
+	"orto-edificio22-completo",  # the tall tower slabs
+	"Cube",                       # big block buildings
+	"kiosko",                     # street kiosks
+	"techolocalcomercialoxxo",    # commercial roof units
+	"ortoedificiocontechorojo-",  # red-roof buildings
+]
+## Instances whose base sits far above the ground are stacked roof pieces of a
+## taller building; they keep the simple collider (their neighbour below owns
+## the destructible skeleton).
+const STRUCT_GROUND_EPS := 1.0
 
 var _city: Node3D = null
 var _baked := 0
@@ -75,6 +90,8 @@ func _bake_node(node: Node, parent_xf: Transform3D) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
 		var world: AABB = xf * mi.get_aabb()
+		if _build_structure(mi, xf, world):
+			return  # structure owns the skin + skeleton; no simple collider
 		if _wants_collider(mi.name, world):
 			var b := DroneBuilding.new()
 			b.box_size = world.size
@@ -85,6 +102,30 @@ func _bake_node(node: Node, parent_xf: Transform3D) -> void:
 			_baked += 1
 	for c in node.get_children():
 		_bake_node(c, xf)
+
+
+## For a structural style instance sitting on the ground, replace the plain
+## collider with a real destructible skeleton under a skin. Returns true if the
+## structure was built (the mesh becomes the controller's skin).
+func _build_structure(mi: MeshInstance3D, xf: Transform3D, world: AABB) -> bool:
+	var style := ""
+	for s in STRUCTURAL_STYLES:
+		if mi.name.begins_with(s):
+			style = s
+			break
+	if style == "":
+		return false
+	if world.position.y > CITY_GROUND_TOP + STRUCT_GROUND_EPS:
+		return false  # stacked roof piece: keep the simple collider
+	# A controller node under the world at the origin; the skeleton's pieces
+	# are placed in world coordinates (the bake tree is not live, so the mesh's
+	# transform is passed in by hand rather than read from global_transform).
+	var ctrl := StructureController.new()
+	ctrl.name = "%s_Structure" % mi.name
+	_world.add_child(ctrl)
+	ctrl.setup(mi, xf, world)
+	_baked += 1
+	return true
 
 
 ## Which meshes become colliders: substantial solids the mech walks around and
