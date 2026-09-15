@@ -13,11 +13,11 @@ extends Node3D
 const _Self = preload("res://lib/bodies/cannon_ball.gd")
 const ExplosionFX := preload("res://lib/fx/explosion_fx.gd")
 
-const RADIUS := 0.4          # matches the old physical ball
+const RADIUS := 0.25         # reduced projectile size
 const GRAVITY := 9.8         # m/s^2: a gentle lob, still flat enough to read
 const LIFE := 6.0            # seconds before it fizzles out
-const SWEEP := 0.9           # overlap radius: ball + half a tick of travel
-const DEFAULT_BLAST_RADIUS := 3.0
+const SWEEP := 0.5           # overlap radius: ball + half a tick of travel (reduced with radius)
+const DEFAULT_BLAST_RADIUS := 1.5  # reduced blast radius
 const DEFAULT_BLAST_IMPULSE := 4.0
 
 var _world: Box3DWorld
@@ -81,7 +81,7 @@ func _hit(at: Vector3) -> bool:
 	if _world == null:
 		return false
 	for b in _world.overlap_sphere(at, SWEEP, 0xFFFFFFFF):
-		if b == self or not (b is Box3DBody):
+		if b == self or not (b is Box3DBody or b is Box3DCharacterBody):
 			continue
 		if b.has_method("take_damage") and _damage > 0.0:
 			b.take_damage(_damage, at)

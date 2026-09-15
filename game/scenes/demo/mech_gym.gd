@@ -38,7 +38,7 @@ const DOT_COLOR := Color(1.0, 0.22, 0.14, 1.0)
 
 ## Tank cannon tuning: heavier round than the walker's plasma stream, so it
 ## fires slower and its reticle reaches out further (the round lobs and rolls).
-const CANNON_INTERVAL := 0.4  # s between cannonballs while LMB is held
+const CANNON_INTERVAL := 0.7  # s between cannonballs while LMB is held (reduced fire rate)
 const CANNON_RANGE := 90.0    # m, reticle raycast distance for cannonballs
 
 

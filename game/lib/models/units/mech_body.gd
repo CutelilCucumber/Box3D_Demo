@@ -93,7 +93,7 @@ const LASER_RANGE := 50.0
 const LASER_THICK := 0.1
 const CANNON_DAMAGE := 10.0   # hp on the first body the plasma touches
 const CANNON_SPEED := 32.0    # m/s tank cannonball travel
-const CANNON_BLAST_RADIUS := 3.0  # m, visual + physics blast radius
+const CANNON_BLAST_RADIUS := 1.5  # m, visual + physics blast radius (reduced)
 const CANNON_BLAST_IMPULSE := 4.0 # blast impulse strength
 const MECH_HP := 100.0
 # Phase 3 absorption: the beam MELTS loose debris instead of damaging it — a
@@ -135,6 +135,7 @@ var _gun_fwd_local := Vector3.ZERO
 var _muzzle_r: Node3D   # right shoulder: the laser
 var _muzzle_l: Node3D   # left shoulder: the cannon
 var _laser_beam: MeshInstance3D
+var _absorb_particles: GPUParticles3D  # blue vortex for reclaim/absorb
 var _flash_mat: StandardMaterial3D
 var _flash_until := -1.0
 var _absorbing: Box3DBody = null   # loose-debris piece the beam is currently melting
@@ -263,8 +264,10 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Swing the follow camera around the mech on the current yaw/pitch, keeping it
 ## above ground so it can't sink through a slope. The distance eases toward the
 ## scroll-wheel target; when the player aims down, the camera rises and pulls
-## closer so the turret/mech doesn't block the target. A raycast from the focus
-## point to the desired spot keeps the camera from phasing through the world.
+## closer so the turret/mech doesn't block the target. A raycast from the mech
+## to the desired camera spot keeps the camera from embedding in geometry — an
+## embedded camera is what makes the aim raycast (fired FROM the camera) return
+## unpredictable hits.
 func _look(delta: float) -> void:
 	var target := _char.global_position
 
@@ -282,20 +285,20 @@ func _look(delta: float) -> void:
 	var focus := target + Vector3.UP * 1.0
 	var desired := focus + back * dist + Vector3.UP * lift
 
-	# Collide the camera against the world: raycast from just behind the mech's
-	# capsule (so the ray doesn't hit the mech itself) toward the desired spot;
-	# if something is in the way, pull the camera in front of it by a margin.
-	var spot := desired
+	# Camera collision: raycast from the mech to the desired camera spot.
+	# If something is in the way, pull the camera in front of it by a margin.
+	# This is the actual fix for the aim-point bug — an embedded camera is what
+	# makes the aim raycast (fired FROM the camera) return unpredictable hits.
+	var cam_pos := desired
 	if _world != null:
-		var ray_from := focus + back * CAM_RAY_START
-		var hit: Dictionary = _world.raycast(ray_from, desired)
+		var hit: Dictionary = _world.raycast(target, desired)
 		if hit.get("hit", false):
-			var to_spot := desired - ray_from
-			if to_spot.length_squared() > 0.0001:
-				spot = (hit["position"] as Vector3) - to_spot.normalized() * CAM_COLLIDE_MARGIN
+			var hit_pos: Vector3 = hit["position"]
+			var dist_to_hit := maxf((hit_pos - target).length() - CAM_COLLIDE_MARGIN, 0.1)
+			cam_pos = target + (hit_pos - target).normalized() * dist_to_hit
 
 	# Smooth the camera position toward the spot to avoid jarring pops.
-	_camera.global_position = _camera.global_position.lerp(spot, clampf(CAM_SMOOTH * delta, 0.0, 1.0))
+	_camera.global_position = _camera.global_position.lerp(cam_pos, clampf(CAM_SMOOTH * delta, 0.0, 1.0))
 
 	_camera.look_at(focus, Vector3.UP)
 	_camera.rotation_degrees.x += rad_to_deg(_pitch)
@@ -482,6 +485,8 @@ func _weapon(delta: float) -> void:
 		_reset_absorb()
 		if _laser_beam != null and _laser_beam.visible:
 			_laser_beam.visible = false
+		if _absorb_particles != null and _absorb_particles.emitting:
+			_absorb_particles.emitting = false
 
 
 ## Whether this platform has a reclaim laser on the right trigger. Both the
@@ -512,11 +517,13 @@ func _laser(delta: float) -> void:
 	var origin := reclaim_tip()
 	var hit: Dictionary = _world.raycast(origin, origin + dir * LASER_RANGE)
 	var to: Vector3
+	var absorbing: bool = false
 	if hit.get("hit", false):
 		to = hit["position"]
 		var c: Box3DBody = hit.get("collider")
 		if _is_debris(c):
 			_absorb(c, delta)
+			absorbing = true
 		else:
 			_reset_absorb()
 			if c != null and c.has_method("take_damage"):
@@ -524,7 +531,7 @@ func _laser(delta: float) -> void:
 	else:
 		to = origin + dir * LASER_RANGE
 		_reset_absorb()
-	_show_beam(reclaim_tip(), to)
+	_show_beam(reclaim_tip(), to, absorbing)
 
 
 ## Loose debris (crates, bricks, rubble, turret wreckage) is consumable: a
@@ -568,8 +575,9 @@ func _heal(amount: float) -> void:
 
 
 ## A stretched emissive box from the right muzzle to the hit point. Toggles
-## visible as the beam starts/stops; freed with the mech.
-func _show_beam(from: Vector3, to: Vector3) -> void:
+## visible as the beam starts/stops; freed with the mech. When absorbing,
+## shows blue vortex particles instead of the red beam.
+func _show_beam(from: Vector3, to: Vector3, absorbing: bool) -> void:
 	if _laser_beam == null:
 		var mesh := BoxMesh.new()
 		mesh.size = Vector3(LASER_THICK, LASER_THICK, 1.0)
@@ -584,11 +592,21 @@ func _show_beam(from: Vector3, to: Vector3) -> void:
 		_laser_beam.material_override = mat
 		add_child(_laser_beam)
 		_laser_beam.top_level = true
-	var length := maxf(from.distance_to(to), 0.01)
-	_laser_beam.global_position = (from + to) * 0.5
-	_laser_beam.look_at(to, Vector3.UP)
-	_laser_beam.scale = Vector3(1.0, 1.0, length)
-	_laser_beam.visible = true
+
+	if absorbing:
+		_laser_beam.visible = false
+		if _absorb_particles != null:
+			_absorb_particles.global_position = from
+			_absorb_particles.look_at(to, Vector3.UP)
+			_absorb_particles.emitting = true
+	else:
+		_laser_beam.visible = true
+		if _absorb_particles != null:
+			_absorb_particles.emitting = false
+		var length := maxf(from.distance_to(to), 0.01)
+		_laser_beam.global_position = (from + to) * 0.5
+		_laser_beam.look_at(to, Vector3.UP)
+		_laser_beam.scale = Vector3(1.0, 1.0, length)
 
 
 ## Aiming is always through the screen centre (the crosshair), computed from
@@ -757,6 +775,57 @@ func _build_visual() -> void:
 	_flash_mat.emission_enabled = true
 	_flash_mat.emission = Color(1.0, 0.2, 0.15)
 
+	# Blue vortex particles for reclaim/absorb (swirling particles in a tight cone).
+	_absorb_particles = GPUParticles3D.new()
+	_absorb_particles.emitting = false
+	_absorb_particles.one_shot = false
+	_absorb_particles.lifetime = 0.5
+	_absorb_particles.explosiveness = 0.0
+	_absorb_particles.speed_scale = 2.0
+	_absorb_particles.amount = 40
+	var ps_mat := StandardMaterial3D.new()
+	ps_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ps_mat.emission_enabled = true
+	ps_mat.albedo_color = Color(0.2, 0.6, 1.0)
+	ps_mat.emission = Color(0.2, 0.6, 1.0)
+	ps_mat.emission_energy_multiplier = 8.0
+	ps_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ps_mat.render_priority = 2
+	_absorb_particles.material_override = ps_mat
+	# Configure particle behavior via ParticleProcessMaterial (works at runtime).
+	var ppm := ParticleProcessMaterial.new()
+	ppm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	ppm.emission_sphere_radius = 0.1
+	ppm.spread = 90.0
+	ppm.initial_velocity_min = 2.0
+	ppm.initial_velocity_max = 6.0
+	ppm.gravity = Vector3(0.0, 0.0, 0.0)
+	ppm.damping_min = 2.0
+	ppm.damping_max = 4.0
+	ppm.scale_min = 0.1
+	ppm.scale_max = 0.3
+	var scale_curve := Curve.new()
+	scale_curve.add_point(Vector2(0.0, 1.0))
+	scale_curve.add_point(Vector2(1.0, 0.0))
+	var scale_curve_tex := CurveTexture.new()
+	scale_curve_tex.curve = scale_curve
+	ppm.scale_curve = scale_curve_tex
+	var color_ramp := Gradient.new()
+	color_ramp.offsets = PackedFloat32Array([0.0, 0.3, 0.7, 1.0])
+	color_ramp.colors = PackedColorArray([
+		Color(0.2, 0.6, 1.0, 1.0),
+		Color(0.2, 0.8, 1.0, 0.8),
+		Color(0.1, 0.4, 0.8, 0.4),
+		Color(0.1, 0.2, 0.6, 0.0)
+	])
+	var color_ramp_tex := GradientTexture1D.new()
+	color_ramp_tex.gradient = color_ramp
+	ppm.color_ramp = color_ramp_tex
+	_absorb_particles.process_material = ppm
+	_absorb_particles.scale = Vector3(0.15, 0.15, 0.15)
+	add_child(_absorb_particles)
+	_absorb_particles.top_level = true
+
 
 ## Swap the mech's parts (Phase 4 tiering): rebuild the visual shell in place
 ## with a new body + head, preserving the character, position and camera.
@@ -767,6 +836,8 @@ func set_parts(new_body: PackedScene, new_head: PackedScene) -> void:
 	head_scene = new_head
 	if _torso != null and is_instance_valid(_torso):
 		_torso.queue_free()
+	if _absorb_particles != null and is_instance_valid(_absorb_particles):
+		_absorb_particles.queue_free()
 	_torso = null
 	_robot = null
 	_body_part = null
@@ -775,6 +846,7 @@ func set_parts(new_body: PackedScene, new_head: PackedScene) -> void:
 	_turret_pivot = null
 	_gun_tip = null
 	_reclaim_tip = null
+	_absorb_particles = null
 	_gun_fwd_local = Vector3.ZERO
 	_build_visual()
 
